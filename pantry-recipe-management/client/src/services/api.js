@@ -204,32 +204,21 @@ export const api = {
         setStorage('user', currentUser);
         return currentUser;
       }
-      await delay(100);
-      return currentUser;
+      return null;
     },
 
-    async login({ email, password }) {
-      await delay(200);
-      currentUser = {
-        ...currentUser,
-        email: email || currentUser.email,
-        name: (email ? email.split('@')[0] : currentUser.name)
-      };
-      setStorage('user', currentUser);
-      return { success: true, user: currentUser };
+    async login() {
+      throw new Error('Use Google sign-in to authenticate.');
     },
 
-    async register({ name, email, password, cooking_level }) {
-      await delay(250);
-      currentUser = {
-        user_id: Date.now(),
-        name,
-        email,
-        cooking_level: cooking_level || 'BEGINNER',
-        joined_date: '2026-09-20'
-      };
-      setStorage('user', currentUser);
-      return { success: true, user: currentUser };
+    async register() {
+      throw new Error('Use Google sign-in to create an account.');
+    },
+
+    async logout() {
+      await callTrpc('auth.logout', {}, 'mutation');
+      currentUser = null;
+      setStorage('user', null);
     },
 
     async updatePreferences(updates) {

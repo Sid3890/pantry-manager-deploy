@@ -17,7 +17,7 @@ This project implements the backend described in the supplied master document as
 
 ## API procedures
 
-All feature procedures require the authenticated Manus session and are available under `/api/trpc`.
+All feature procedures require the authenticated Google-backed session and are available under `/api/trpc`.
 
 | Procedure | Purpose |
 | --- | --- |
@@ -51,12 +51,18 @@ Recipe websites retain ownership of their content. The application stores attrib
 Run:
 
 ```bash
-pnpm check
-pnpm test
-pnpm build
+npm run check
+npm test
+npm run build
 ```
 
-To enable Gemini locally, copy `.env.example` to `.env` and set `GEMINI_API_KEY`. The key remains server-side and is never sent to the browser.
+For local Google authentication, create a **Web application** OAuth client in Google Cloud and add its authorized redirect URI:
+
+```text
+http://localhost:3000/api/oauth/google/callback
+```
+
+Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `JWT_SECRET`, and `DATABASE_URL` in `.env`. The Google client secret, session secret, database URL, and Gemini key remain server-side and must never be committed.
 
 ## Public hosting
 
@@ -69,6 +75,6 @@ npm run build
 npm start
 ```
 
-The same commands work in PowerShell; no Unix-only `NODE_ENV=...` prefix is required. The application serves the built client and API from one origin. Deployment probes can call `GET /healthz`, which returns `{ "ok": true }` when the process is running. Set `DATABASE_URL`, `JWT_SECRET`, `OAUTH_SERVER_URL`, and `VITE_APP_ID` before exposing it publicly; set `GEMINI_API_KEY` to enable the search-first Gemini selector.
+The same commands work in PowerShell; no Unix-only `NODE_ENV=...` prefix is required. The application serves the built client and API from one origin. Deployment probes can call `GET /healthz`, which returns `{ "ok": true }` when the process is running. For public hosting, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` to the public callback URL, `JWT_SECRET`, and `DATABASE_URL`; set `GEMINI_API_KEY` to enable the search-first Gemini selector.
 
 The database migration is generated in `drizzle/` and is applied to the managed database through the project SQL tool.
