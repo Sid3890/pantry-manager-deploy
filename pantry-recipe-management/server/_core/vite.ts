@@ -4,15 +4,23 @@ import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export async function setupVite(app: Express, server: Server) {
+  const projectRoot = path.resolve(import.meta.dirname, "../..");
   const viteConfig = {
-    root: path.resolve(import.meta.dirname, "../..", "client"),
+    plugins: [react(), tailwindcss()],
+    define: {
+      'import.meta.env.VITE_APP_ID': JSON.stringify(process.env.VITE_APP_ID || process.env.MANUS_PROJECT_ID || ''),
+      'import.meta.env.VITE_OAUTH_PORTAL_URL': JSON.stringify(process.env.VITE_OAUTH_PORTAL_URL || process.env.MANUS_OAUTH_PORTAL_URL || ''),
+    },
+    root: path.resolve(projectRoot, "client"),
     resolve: {
       alias: {
-        "@": path.resolve(import.meta.dirname, "../..", "client", "src"),
-        "@shared": path.resolve(import.meta.dirname, "../..", "shared"),
-        "@assets": path.resolve(import.meta.dirname, "../..", "attached_assets"),
+        "@": path.resolve(projectRoot, "client", "src"),
+        "@shared": path.resolve(projectRoot, "shared"),
+        "@assets": path.resolve(projectRoot, "attached_assets"),
       },
     },
   };
