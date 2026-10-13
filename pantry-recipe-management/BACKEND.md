@@ -8,6 +8,7 @@ This project implements the backend described in the supplied master document as
 - Purchase recording that writes purchase history and inventory in one transaction.
 - Two-stage recipe recommendations: stored SQL matching first, then real published web recipe retrieval when no fully available stored recipe exists.
 - Optional structured LLM selection among retrieved candidates. The model never writes inventory and cannot bypass backend validation.
+- Gemini support is available through the server-side REST adapter; when `GEMINI_API_KEY` is set, Gemini is used for candidate selection, otherwise the existing Forge-compatible provider is used.
 - Proportional scaling based on the most restrictive ingredient; countable quantities are floored and zero quantities invalidate the recipe.
 - Recipe caching after validation using `source = WEB_RETRIEVED`, with source URL attribution retained.
 - Transactional cooking that rechecks current stock, deducts ingredients, and records cooking history.
@@ -41,7 +42,7 @@ Oracle deployment references are included in `database/oracle/01_schema.sql` and
 
 ## External recipe and AI safety
 
-The web pipeline searches DuckDuckGo HTML results, parses Schema.org `Recipe` JSON-LD from published pages, preserves the source URL, and sends only candidate metadata to the server-side LLM helper. If AI selection fails, a deterministic first-candidate fallback is used. Every candidate is revalidated against the current pantry before it can be cached. Missing ingredients, incompatible units, and unusable scaled quantities are rejected.
+The web pipeline searches DuckDuckGo HTML results, parses Schema.org `Recipe` JSON-LD from published pages, preserves the source URL, and sends only candidate metadata to the server-side LLM helper. Gemini is instructed to select only from those retrieved candidates; it is not given a recipe-generation task. If AI selection fails, a deterministic first-candidate fallback is used. Every candidate is revalidated against the current pantry before it can be cached. Missing ingredients, incompatible units, and unusable scaled quantities are rejected. Common ingredient aliases such as `onion`/`onions` are normalized before validation.
 
 Recipe websites retain ownership of their content. The application stores attribution and should display the original source URL to users while respecting each source's terms of use.
 
@@ -54,5 +55,20 @@ pnpm check
 pnpm test
 pnpm build
 ```
+
+To enable Gemini locally, copy `.env.example` to `.env` and set `GEMINI_API_KEY`. The key remains server-side and is never sent to the browser.
+
+## Public hosting
+
+The nested `pantry-recipe-management` directory is the deployable full-stack application. From that directory:
+
+```bash
+npm install
+npm run check
+npm run build
+npm start
+```
+
+The same commands work in PowerShell; no Unix-only `NODE_ENV=...` prefix is required. The application serves the built client and API from one origin. Deployment probes can call `GET /healthz`, which returns `{ "ok": true }` when the process is running. Set `DATABASE_URL`, `JWT_SECRET`, `OAUTH_SERVER_URL`, and `VITE_APP_ID` before exposing it publicly; set `GEMINI_API_KEY` to enable the search-first Gemini selector.
 
 The database migration is generated in `drizzle/` and is applied to the managed database through the project SQL tool.

@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { Utensils, ArrowRight, ShieldCheck, Sparkles, ChefHat } from 'lucide-react';
+import { Utensils, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { CookingLevelChip } from '../common/Badge';
 
 export const AuthScreen = () => {
   const { login, register } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
-  const [name, setName] = useState('Alex Rivera');
-  const [email, setEmail] = useState('alex.rivera@kitchen.io');
-  const [password, setPassword] = useState('pantrypass123');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [cookingLevel, setCookingLevel] = useState('BEGINNER');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -32,9 +32,12 @@ export const AuthScreen = () => {
     }
   };
 
-  const handleQuickDemo = (level = 'BEGINNER') => {
+  const handleQuickDemo = async (level = 'BEGINNER') => {
     setCookingLevel(level);
-    login({ email: `demo.${level.toLowerCase()}@kitchen.io`, password: 'demo' });
+    setLoading(true);
+    try { await login({ email: `demo.${level.toLowerCase()}@kitchen.io`, password: 'demo' }); }
+    catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   };
 
   return (

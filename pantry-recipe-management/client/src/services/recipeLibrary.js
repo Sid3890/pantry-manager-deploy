@@ -1,0 +1,62 @@
+export const ADDITIONAL_RECIPES = [
+  {
+    recipe_id: 301, name: 'Classic Masala Omelette', tagline: 'Fluffy eggs with onion, tomato, coriander, and green chilli.', cook_time_min: 15, difficulty_level: 'BEGINNER', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.7, reviews_count: 218, dietary_tags: ['Vegetarian', 'High Protein', 'Breakfast'],
+    steps: ['Crack the eggs into a bowl and whisk with salt and black pepper until evenly mixed.', 'Finely chop the onion, tomato, green chilli, and coriander, then fold them into the eggs.', 'Heat a lightly buttered non-stick pan over medium heat.', 'Pour in the mixture and gently spread the vegetables across the pan.', 'Cook until the edges set, fold the omelette in half, and cook until the centre is no longer runny.'],
+    ingredients: [{ ingredient_id: 4, name: 'Eggs', quantity_required: 2, unit: 'piece' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 7, name: 'Tomatoes', quantity_required: 1, unit: 'piece' }, { ingredient_id: 6, name: 'Butter', quantity_required: 10, unit: 'g' }]
+  },
+  {
+    recipe_id: 302, name: 'Aloo Pyaz Sabzi', tagline: 'Crisp potatoes and sweet onions finished with warm spices.', cook_time_min: 30, difficulty_level: 'BEGINNER', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.6, reviews_count: 176, dietary_tags: ['Vegetarian', 'Vegan Friendly', 'Gluten Free'],
+    steps: ['Peel and cube the potatoes into evenly sized pieces.', 'Slice the onions and warm olive oil in a wide pan.', 'Cook the onions until translucent, then add cumin and turmeric.', 'Add the potatoes, salt, and a splash of water; stir until coated.', 'Cover and cook until tender, then uncover and brown the edges before serving.'],
+    ingredients: [{ ingredient_id: 13, name: 'Potatoes', quantity_required: 3, unit: 'piece' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 9, name: 'Olive Oil', quantity_required: 20, unit: 'ml' }, { ingredient_id: 50, name: 'Turmeric', quantity_required: 3, unit: 'g' }]
+  },
+  {
+    recipe_id: 303, name: 'Paneer Bhurji', tagline: 'Crumbled paneer cooked with onions, tomatoes, and aromatic spices.', cook_time_min: 25, difficulty_level: 'BEGINNER', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.8, reviews_count: 251, dietary_tags: ['Vegetarian', 'High Protein', 'Indian'],
+    steps: ['Crumble the paneer into small, bite-sized pieces and set aside.', 'Heat oil in a pan and sauté diced onions until lightly golden.', 'Add tomatoes, turmeric, chilli powder, and salt; cook until soft.', 'Fold in the crumbled paneer and cook gently so it stays tender.', 'Finish with coriander and serve hot with bread or rice.'],
+    ingredients: [{ ingredient_id: 2, name: 'Paneer', quantity_required: 200, unit: 'g' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 7, name: 'Tomatoes', quantity_required: 1, unit: 'piece' }, { ingredient_id: 57, name: 'Vegetable Oil', quantity_required: 15, unit: 'ml' }]
+  },
+  {
+    recipe_id: 304, name: 'Vegetable Fried Rice', tagline: 'Fragrant rice tossed with vegetables, aromatics, and soy sauce.', cook_time_min: 25, difficulty_level: 'INTERMEDIATE', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.7, reviews_count: 309, dietary_tags: ['Vegetarian', 'Quick Prep'],
+    steps: ['Use chilled cooked rice and separate any clumps with clean hands or a fork.', 'Heat oil in a wok or wide pan and sauté garlic and onions.', 'Add carrots, peas, and bell pepper; stir-fry until crisp-tender.', 'Add the rice and toss continuously so it warms without sticking.', 'Season with soy sauce and pepper, then serve immediately.'],
+    ingredients: [{ ingredient_id: 5, name: 'Basmati Rice', quantity_required: 300, unit: 'g' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 17, name: 'Carrots', quantity_required: 1, unit: 'piece' }, { ingredient_id: 22, name: 'Green Peas', quantity_required: 80, unit: 'g' }, { ingredient_id: 58, name: 'Soy Sauce', quantity_required: 15, unit: 'ml' }]
+  },
+  {
+    recipe_id: 305, name: 'Chana Masala', tagline: 'Chickpeas simmered with onion, tomato, ginger, garlic, and spices.', cook_time_min: 40, difficulty_level: 'INTERMEDIATE', utensil_count: 2, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.9, reviews_count: 402, dietary_tags: ['Vegetarian', 'Vegan Friendly', 'High Protein'],
+    steps: ['Drain and rinse the cooked chickpeas thoroughly.', 'Sauté onions in oil until golden, then add ginger and garlic.', 'Add tomatoes, turmeric, cumin, and chilli powder; cook until the oil separates.', 'Stir in the chickpeas with a little water and simmer until the sauce thickens.', 'Taste for salt, finish with coriander, and rest for five minutes before serving.'],
+    ingredients: [{ ingredient_id: 39, name: 'Chickpeas', quantity_required: 300, unit: 'g' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 7, name: 'Tomatoes', quantity_required: 2, unit: 'piece' }, { ingredient_id: 14, name: 'Garlic', quantity_required: 2, unit: 'piece' }, { ingredient_id: 51, name: 'Cumin', quantity_required: 4, unit: 'g' }]
+  },
+  {
+    recipe_id: 306, name: 'Garlic Butter Pasta', tagline: 'Silky pasta coated in garlic butter, pepper, and herbs.', cook_time_min: 20, difficulty_level: 'BEGINNER', utensil_count: 2, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.5, reviews_count: 187, dietary_tags: ['Vegetarian', 'Quick Prep'],
+    steps: ['Boil the pasta in salted water until just tender, reserving a cup of cooking water.', 'Melt butter in a pan and gently cook sliced garlic without browning it.', 'Add the drained pasta and toss with a splash of cooking water.', 'Season with black pepper and salt, adding more water until glossy.', 'Serve immediately with grated cheese if available.'],
+    ingredients: [{ ingredient_id: 11, name: 'Penne Pasta', quantity_required: 200, unit: 'g' }, { ingredient_id: 6, name: 'Butter', quantity_required: 30, unit: 'g' }, { ingredient_id: 14, name: 'Garlic', quantity_required: 2, unit: 'piece' }, { ingredient_id: 48, name: 'Black Pepper', quantity_required: 2, unit: 'g' }]
+  },
+  {
+    recipe_id: 307, name: 'Spinach Egg Scramble', tagline: 'Soft scrambled eggs with wilted spinach and butter.', cook_time_min: 12, difficulty_level: 'BEGINNER', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.6, reviews_count: 142, dietary_tags: ['Vegetarian', 'High Protein', 'Quick Prep'],
+    steps: ['Whisk the eggs with salt and pepper until smooth.', 'Melt butter in a pan and wilt the spinach for one to two minutes.', 'Pour in the eggs and wait briefly for the edges to set.', 'Fold slowly from the edges toward the centre to create soft curds.', 'Remove from the heat while still creamy and serve with toast.'],
+    ingredients: [{ ingredient_id: 4, name: 'Eggs', quantity_required: 2, unit: 'piece' }, { ingredient_id: 8, name: 'Baby Spinach', quantity_required: 60, unit: 'g' }, { ingredient_id: 6, name: 'Butter', quantity_required: 10, unit: 'g' }]
+  },
+  {
+    recipe_id: 308, name: 'Tomato Cucumber Salad', tagline: 'A bright chopped salad with lemon, olive oil, and coriander.', cook_time_min: 10, difficulty_level: 'BEGINNER', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.4, reviews_count: 121, dietary_tags: ['Vegetarian', 'Vegan Friendly', 'No Cook'],
+    steps: ['Wash and dry the tomatoes and cucumber.', 'Cut both into evenly sized pieces and place in a bowl.', 'Add lemon juice, olive oil, salt, and pepper.', 'Toss gently so the vegetables stay crisp.', 'Finish with coriander and serve straight away.'],
+    ingredients: [{ ingredient_id: 7, name: 'Tomatoes', quantity_required: 2, unit: 'piece' }, { ingredient_id: 19, name: 'Cucumber', quantity_required: 1, unit: 'piece' }, { ingredient_id: 20, name: 'Lemons', quantity_required: 1, unit: 'piece' }, { ingredient_id: 9, name: 'Olive Oil', quantity_required: 10, unit: 'ml' }]
+  },
+  {
+    recipe_id: 309, name: 'Lemon Rice', tagline: 'Steamed rice brightened with lemon, cumin, and a light tempering.', cook_time_min: 20, difficulty_level: 'BEGINNER', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.6, reviews_count: 205, dietary_tags: ['Vegetarian', 'Vegan Friendly', 'Gluten Free'],
+    steps: ['Cook the rice until tender, then spread it on a plate to cool slightly.', 'Warm oil in a pan and toast cumin until fragrant.', 'Add the rice and gently fold so the grains remain separate.', 'Season with salt and squeeze lemon juice over the top.', 'Rest for two minutes, taste, and adjust the lemon before serving.'],
+    ingredients: [{ ingredient_id: 5, name: 'Basmati Rice', quantity_required: 250, unit: 'g' }, { ingredient_id: 20, name: 'Lemons', quantity_required: 1, unit: 'piece' }, { ingredient_id: 51, name: 'Cumin', quantity_required: 3, unit: 'g' }, { ingredient_id: 57, name: 'Vegetable Oil', quantity_required: 15, unit: 'ml' }]
+  },
+  {
+    recipe_id: 310, name: 'Chicken Pepper Stir-Fry', tagline: 'Tender chicken with onion, bell pepper, garlic, and black pepper.', cook_time_min: 30, difficulty_level: 'INTERMEDIATE', utensil_count: 1, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.8, reviews_count: 274, dietary_tags: ['High Protein', 'Gluten Free'],
+    steps: ['Slice the chicken into even strips and season with salt and pepper.', 'Heat oil in a hot pan and sear the chicken in a single layer.', 'Set the chicken aside, then sauté onion, bell pepper, and garlic.', 'Return the chicken and toss until cooked through and lightly coated.', 'Check that the centre is fully cooked before serving hot.'],
+    ingredients: [{ ingredient_id: 34, name: 'Chicken', quantity_required: 300, unit: 'g' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 18, name: 'Bell Peppers', quantity_required: 1, unit: 'piece' }, { ingredient_id: 14, name: 'Garlic', quantity_required: 2, unit: 'piece' }, { ingredient_id: 48, name: 'Black Pepper', quantity_required: 3, unit: 'g' }]
+  },
+  {
+    recipe_id: 311, name: 'Crispy Potato Sandwich', tagline: 'Spiced potato filling pressed between buttered toasted bread.', cook_time_min: 25, difficulty_level: 'BEGINNER', utensil_count: 2, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.5, reviews_count: 163, dietary_tags: ['Vegetarian', 'Quick Prep'],
+    steps: ['Boil potatoes until fork-tender, peel them, and mash while warm.', 'Mix in finely chopped onion, salt, cumin, and pepper.', 'Spread the filling between bread slices and press gently.', 'Butter the outside and toast in a skillet until crisp and golden.', 'Cut diagonally and serve hot with tomato sauce.'],
+    ingredients: [{ ingredient_id: 13, name: 'Potatoes', quantity_required: 2, unit: 'piece' }, { ingredient_id: 1, name: 'Bread', quantity_required: 2, unit: 'piece' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 6, name: 'Butter', quantity_required: 10, unit: 'g' }]
+  },
+  {
+    recipe_id: 312, name: 'Dal Tadka', tagline: 'Creamy lentils finished with a sizzling garlic and cumin tempering.', cook_time_min: 45, difficulty_level: 'INTERMEDIATE', utensil_count: 2, source: 'MANUAL', source_attribution: 'Curated recipe library', rating: 4.9, reviews_count: 366, dietary_tags: ['Vegetarian', 'Vegan Friendly', 'High Protein'],
+    steps: ['Rinse the lentils until the water runs mostly clear.', 'Cook them with water, turmeric, and salt until soft and creamy.', 'Warm oil in a small pan and toast cumin, garlic, and onion.', 'Pour the sizzling tempering over the cooked lentils carefully.', 'Stir once, adjust consistency with water, and serve with rice.'],
+    ingredients: [{ ingredient_id: 40, name: 'Lentils', quantity_required: 200, unit: 'g' }, { ingredient_id: 3, name: 'Onions', quantity_required: 1, unit: 'piece' }, { ingredient_id: 14, name: 'Garlic', quantity_required: 2, unit: 'piece' }, { ingredient_id: 50, name: 'Turmeric', quantity_required: 3, unit: 'g' }, { ingredient_id: 51, name: 'Cumin', quantity_required: 3, unit: 'g' }]
+  }
+];

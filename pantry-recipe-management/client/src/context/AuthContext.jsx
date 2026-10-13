@@ -34,8 +34,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    api.auth.logout();
     setCurrentUser(null);
-    localStorage.removeItem('pantry_user');
   };
 
   const updateCookingLevel = async (level) => {

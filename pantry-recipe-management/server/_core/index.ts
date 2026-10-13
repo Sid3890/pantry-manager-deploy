@@ -36,6 +36,9 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true, service: "pantry-recipe-management" });
+  });
   // tRPC API
   app.use(
     "/api/trpc",
@@ -44,8 +47,8 @@ async function startServer() {
       createContext,
     })
   );
-  // development mode uses Vite, production mode uses static files
-  if (process.env.NODE_ENV === "development") {
+  // Development is the default for `npm run dev`; production is selected explicitly by `npm start`.
+  if (process.env.NODE_ENV !== "production") {
     await setupVite(app, server);
   } else {
     serveStatic(app);

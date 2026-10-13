@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Search, Filter, AlertTriangle, Sparkles, CheckCircle2, Clock, AlertOctagon, PackageCheck } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Sparkles, CheckCircle2, Clock, AlertOctagon, PackageCheck } from 'lucide-react';
 import { usePantry } from '../../context/PantryContext';
 import { PantryCard } from './PantryCard';
 import { AddItemModal } from './AddItemModal';
@@ -7,11 +7,12 @@ import { CardSkeleton } from '../common/Skeleton';
 import { CATEGORIES } from '../../services/mockData';
 
 export const PantryDashboard = ({ onNavigateToCook }) => {
-  const { pantryItems, loading, stats, addItem, updateQuantity, removeItem } = usePantry();
+  const { pantryItems, loading, stats, addItem, updateItem, updateQuantity, removeItem } = usePantry();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'FRESH' | 'EXPIRING' | 'EXPIRED'
+  const [editingItem, setEditingItem] = useState(null);
 
   // Filtered pantry list
   const filteredItems = pantryItems.filter(item => {
@@ -235,6 +236,7 @@ export const PantryDashboard = ({ onNavigateToCook }) => {
               item={item}
               onUpdateQuantity={updateQuantity}
               onRemove={removeItem}
+              onEdit={(selectedItem) => { setEditingItem(selectedItem); setIsAddModalOpen(true); }}
             />
           ))}
         </div>
@@ -254,8 +256,9 @@ export const PantryDashboard = ({ onNavigateToCook }) => {
       {/* Add Item Modal */}
       <AddItemModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAdd={addItem}
+        onClose={() => { setIsAddModalOpen(false); setEditingItem(null); }}
+        onSubmit={async (data) => editingItem ? updateItem(editingItem.item_id, data) : addItem(data)}
+        editingItem={editingItem}
       />
 
     </div>

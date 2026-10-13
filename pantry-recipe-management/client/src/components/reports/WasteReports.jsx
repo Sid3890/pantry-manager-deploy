@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, TrendingDown, DollarSign, ShieldAlert, Sparkles, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Trash2, DollarSign, Sparkles, RefreshCw, CheckCircle2, CalendarDays } from 'lucide-react';
 import { api } from '../../services/api';
 import { WasteOverTimeChart, MostWastedChart, WasteCategoryChart } from './MiniCharts';
 
@@ -7,8 +7,7 @@ export const WasteReports = ({ onNavigateToCook }) => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchReport = async () => {
+  const fetchReport = async () => {
       try {
         setLoading(true);
         const data = await api.reports.getWasteData();
@@ -18,7 +17,9 @@ export const WasteReports = ({ onNavigateToCook }) => {
       } finally {
         setLoading(false);
       }
-    };
+  };
+
+  useEffect(() => {
     fetchReport();
   }, []);
 
@@ -48,8 +49,9 @@ export const WasteReports = ({ onNavigateToCook }) => {
           Waste & Prevention Reports
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Historical records tracked in Oracle WASTE_LOG. Visualizing waste trends and prevention performance.
+          A live view of discarded ingredients, cost impact, and the habits that help prevent waste.
         </p>
+        <button type="button" onClick={fetchReport} disabled={loading} className="mt-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:border-emerald-300 hover:text-emerald-700 transition-all disabled:opacity-50"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />Refresh report</button>
       </div>
 
       {/* Summary KPI Cards */}
@@ -69,7 +71,7 @@ export const WasteReports = ({ onNavigateToCook }) => {
             {reportData.totalItemsWasted} <span className="text-sm font-semibold text-slate-400">items</span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Recorded in Oracle WASTE_LOG
+            Logged from pantry actions
           </p>
         </div>
 
@@ -150,6 +152,11 @@ export const WasteReports = ({ onNavigateToCook }) => {
       <div className="max-w-2xl">
         <WasteCategoryChart categories={reportData.categoryBreakdown} />
       </div>
+
+      <section className="bg-white rounded-3xl p-6 border border-slate-100 shadow-xs">
+        <div className="flex items-center justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900">Recent waste log</h3><p className="text-xs text-slate-400 mt-1">Items removed as expired or intentionally discarded.</p></div><CalendarDays className="w-5 h-5 text-slate-400" /></div>
+        {reportData.recentLogs?.length ? <div className="divide-y divide-slate-100">{reportData.recentLogs.map(item => <div key={item.waste_id} className="py-3 flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-800">{item.name}</p><p className="text-xs text-slate-400">{item.expired_on} · {item.category}</p></div><div className="text-right"><p className="text-sm font-bold text-rose-700">{item.quantity_wasted} {item.unit}</p><p className="text-xs text-slate-400">${Number(item.estimated_cost || 0).toFixed(2)}</p></div></div>)}</div> : <p className="py-6 text-sm text-emerald-700 bg-emerald-50 rounded-2xl text-center">No waste has been logged. Great work.</p>}
+      </section>
 
     </div>
   );

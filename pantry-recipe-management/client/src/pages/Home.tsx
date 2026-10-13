@@ -9,7 +9,6 @@ import { WhatCanICook } from '../components/recipes/WhatCanICook';
 import { RecipeDetailModal } from '../components/recipes/RecipeDetailModal';
 import { CookingConfirmationModal } from '../components/recipes/CookingConfirmationModal';
 import { WasteReports } from '../components/reports/WasteReports';
-import { Database, Sparkles } from 'lucide-react';
 
 function PantryAppMain() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -73,29 +72,6 @@ function PantryAppMain() {
       {/* Global Toast Notification */}
       <Toast toast={toast} onClose={() => showToast(null)} />
 
-      {/* Footer System Status */}
-      <footer className="mt-auto border-t border-slate-200/70 bg-white/60 py-4 px-4 text-center text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-            <span className="font-semibold text-slate-600">Node.js + Express + tRPC Backend Connected</span>
-            <span className="text-slate-300">•</span>
-            <span>Oracle / Relational DB Mode</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1 text-slate-500">
-              <Database className="w-3.5 h-3.5 text-emerald-600" />
-              <span>SQL Match (Primary)</span>
-            </span>
-            <span className="text-slate-300">/</span>
-            <span className="flex items-center gap-1 text-slate-500">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              <span>AI Web Fallback</span>
-            </span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

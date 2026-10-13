@@ -218,10 +218,48 @@ const resolveApiUrl = () =>
     : "https://forge.manus.im/v1/chat/completions";
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!ENV.forgeApiKey && !ENV.geminiApiKey) {
+    throw new Error("No LLM provider is configured. Set GEMINI_API_KEY or BUILT_IN_FORGE_API_KEY.");
   }
 };
+
+const textFromMessage = (content: MessageContent | MessageContent[]) =>
+  ensureArray(content).map(part => typeof part === "string" ? part : part.type === "text" ? part.text : "").filter(Boolean).join("\n");
+
+const sanitizeGeminiSchema = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sanitizeGeminiSchema);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !["additionalProperties", "$schema", "strict", "name"].includes(key)).map(([key, child]) => [key, sanitizeGeminiSchema(child)]));
+};
+
+async function invokeGemini(params: InvokeParams): Promise<InvokeResult> {
+  const system = params.messages.filter(message => message.role === "system").map(message => textFromMessage(message.content)).join("\n");
+  const contents = params.messages.filter(message => message.role !== "system" && message.role !== "tool" && message.role !== "function").map(message => ({
+    role: message.role === "assistant" ? "model" : "user",
+    parts: [{ text: textFromMessage(message.content) }],
+  }));
+  const explicitFormat = params.responseFormat || params.response_format;
+  const schema = explicitFormat?.type === "json_schema" ? sanitizeGeminiSchema(explicitFormat.json_schema.schema) : undefined;
+  const body: Record<string, unknown> = {
+    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    contents,
+    generationConfig: {
+      temperature: 0.1,
+      ...(typeof (params.maxTokens ?? params.max_tokens) === "number" ? { maxOutputTokens: params.maxTokens ?? params.max_tokens } : {}),
+      ...(schema ? { responseMimeType: "application/json", responseSchema: schema } : {}),
+    },
+  };
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ENV.geminiModel)}:generateContent?key=${encodeURIComponent(ENV.geminiApiKey)}`;
+  const response = await fetchWithBackoff(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini invoke failed: ${response.status} ${response.statusText} – ${errorText}`);
+  }
+  const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  const content = data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("") || "";
+  if (!content) throw new Error("Gemini returned no candidate content");
+  return { id: `gemini-${Date.now()}`, created: Math.floor(Date.now() / 1000), model: ENV.geminiModel, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }] };
+}
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -341,6 +379,8 @@ const fetchWithBackoff = async (
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
+
+  if (ENV.geminiApiKey) return invokeGemini(params);
 
   const {
     messages,

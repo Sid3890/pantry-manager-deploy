@@ -86,7 +86,18 @@ async function searchPublishedRecipes(query: string): Promise<PublishedRecipeCan
 }
 
 function normalize(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+  const aliases: Record<string, string> = {
+    onion: "onions", onions: "onions", "red onion": "onions", "yellow onion": "onions", shallot: "onions", shallots: "onions",
+    tomato: "tomatoes", tomatoes: "tomatoes", "cherry tomato": "tomatoes", potato: "potatoes", potatoes: "potatoes", egg: "eggs", eggs: "eggs", carrot: "carrots", carrots: "carrots",
+    pepper: "black pepper", capsicum: "bell peppers", cilantro: "coriander", yoghurt: "yogurt", curd: "yogurt",
+    dahi: "yogurt", chilli: "green chillies", chili: "green chillies", garlic: "garlic", pea: "green peas",
+    chickpea: "chickpeas", lentil: "lentils", prawn: "prawns", shrimp: "prawns", lime: "lemons",
+  };
+  if (aliases[cleaned]) return aliases[cleaned];
+  if (cleaned.length > 4 && cleaned.endsWith("ies")) return `${cleaned.slice(0, -3)}y`;
+  if (cleaned.length > 4 && cleaned.endsWith("s") && !cleaned.endsWith("ss")) return cleaned.slice(0, -1);
+  return cleaned;
 }
 
 export function calculateAdaptation(candidate: PublishedRecipeCandidate, pantry: PantrySnapshot) {

@@ -1,19 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sparkles, SlidersHorizontal, ChevronDown, ChevronUp, Database, CheckCircle2, AlertCircle, ChefHat, RefreshCw } from 'lucide-react';
+import { Sparkles, SlidersHorizontal, ChevronDown, ChevronUp, Database, CheckCircle2, ChefHat } from 'lucide-react';
 import { api } from '../../services/api';
 import { usePantry } from '../../context/PantryContext';
 import { RecipeCard } from './RecipeCard';
 import { RecipeFilters } from './RecipeFilters';
 import { RecipeCardSkeleton } from '../common/Skeleton';
+import { CookingLevelChip } from '../common/Badge';
+import { useAuth } from '../../context/AuthContext';
 
 export const WhatCanICook = ({ onSelectRecipe }) => {
   const { pantryItems } = usePantry();
+  const { currentUser, updateCookingLevel } = useAuth();
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasTriggeredSearch, setHasTriggeredSearch] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false); // Collapsed by default!
   const [meta, setMeta] = useState({ database_matches: 0, ai_fallbacks: 0, ready_to_cook_count: 0 });
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL'); // 'ALL' | 'READY' | 'ALMOST'
+  const [cookingLevel, setCookingLevel] = useState(currentUser?.cooking_level || 'BEGINNER');
 
   const [filters, setFilters] = useState({
     maxTime: '',
@@ -25,7 +29,7 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
     setLoading(true);
     setHasTriggeredSearch(true);
     try {
-      const res = await api.recipes.getRecommendations(filters);
+      const res = await api.recipes.getRecommendations({ ...filters, cookingLevel });
       setRecipes(res.recipes);
       setMeta(res.metadata || {});
     } catch (err) {
@@ -33,7 +37,7 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, cookingLevel]);
 
   // Initial load on first render
   useEffect(() => {
@@ -99,6 +103,15 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
               )}
               {isFilterOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
+          </div>
+          <div className="mt-5 pt-4 border-t border-white/15">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-100 mb-2">Cooking experience</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-w-xl">
+              {['BEGINNER', 'INTERMEDIATE', 'ADVANCED'].map(level => (
+                <CookingLevelChip key={level} level={level} interactive selected={cookingLevel === level} onClick={async () => { setCookingLevel(level); await updateCookingLevel(level); }} />
+              ))}
+            </div>
+            <p className="text-[11px] text-emerald-100/80 mt-2">Prioritizes recipes at or below your selected skill level.</p>
           </div>
         </div>
 

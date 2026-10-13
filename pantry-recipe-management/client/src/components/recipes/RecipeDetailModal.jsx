@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Clock, UtensilsCrossed, Star, CheckCircle2, AlertCircle, Sparkles, ChefHat, Database, Check } from 'lucide-react';
-import { RecipeSourceBadge, AvailabilityBadge, CookingLevelChip } from '../common/Badge';
+import { X, Clock, UtensilsCrossed, CheckCircle2, AlertCircle, Sparkles, ChefHat, Check } from 'lucide-react';
+import { RecipeSourceBadge, AvailabilityBadge } from '../common/Badge';
 
 export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
   const [completedSteps, setCompletedSteps] = useState({});
@@ -175,7 +175,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
                 Cooking Instructions
               </h3>
               <span className="text-xs text-slate-400">
-                Tap steps to track progress
+                {Object.values(completedSteps).filter(Boolean).length}/{recipe.steps.length} complete · Tap a step to track progress
               </span>
             </div>
 
@@ -199,9 +199,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
                     }`}>
                       {idx + 1}
                     </span>
-                    <span className="text-sm leading-relaxed pt-0.5">
-                      {step}
-                    </span>
+                    <span className="text-sm leading-relaxed pt-0.5"><span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700/70 mb-0.5">{idx === 0 ? 'Prepare' : idx === recipe.steps.length - 1 ? 'Finish' : 'Cook'}</span>{step}</span>
                   </li>
                 );
               })}

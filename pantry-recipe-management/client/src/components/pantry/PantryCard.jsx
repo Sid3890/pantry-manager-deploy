@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, Minus, Trash2, Calendar, AlertOctagon } from 'lucide-react';
+import { Plus, Minus, Trash2, Pencil, AlertOctagon } from 'lucide-react';
 import { ExpiryPill } from './ExpiryPill';
 
-export const PantryCard = ({ item, onUpdateQuantity, onRemove }) => {
+export const PantryCard = ({ item, onUpdateQuantity, onRemove, onEdit }) => {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const handleIncrement = async () => {
     const step = (item.unit === 'g' || item.unit === 'ml') ? 50 : 1;
@@ -16,7 +17,7 @@ export const PantryCard = ({ item, onUpdateQuantity, onRemove }) => {
     const step = (item.unit === 'g' || item.unit === 'ml') ? 50 : 1;
     if (item.quantity <= step) {
       if (window.confirm(`Remove ${item.name} from pantry?`)) {
-        await onRemove(item.item_id, false);
+        setIsRemoving(true); await onRemove(item.item_id, false);
       }
       return;
     }
@@ -30,7 +31,7 @@ export const PantryCard = ({ item, onUpdateQuantity, onRemove }) => {
 
   return (
     <div
-      className={`group relative bg-white rounded-2xl p-5 border transition-all duration-200 hover:shadow-md ${
+      className={`group relative bg-white rounded-2xl p-5 border transition-all duration-300 hover:shadow-md ${isRemoving ? 'opacity-0 scale-95 -translate-y-1 pointer-events-none' : ''} ${
         isExpired
           ? 'border-rose-200/90 bg-rose-50/20'
           : isExpiringSoon
@@ -107,15 +108,16 @@ export const PantryCard = ({ item, onUpdateQuantity, onRemove }) => {
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => onRemove(item.item_id, false)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+            <button
+              type="button"
+              onClick={() => { setIsRemoving(true); onRemove(item.item_id, false); }}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all active:scale-90"
             title="Delete item"
             aria-label={`Remove ${item.name}`}
           >
             <Trash2 className="w-4 h-4" />
           </button>
+          <button type="button" onClick={() => onEdit(item)} className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all active:scale-90" title="Edit item" aria-label={`Edit ${item.name}`}><Pencil className="w-4 h-4" /></button>
         </div>
 
       </div>
