@@ -127,19 +127,24 @@ export async function getPantry(userId: number) {
 }
 
 export async function getPantrySnapshot(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select({
-    ingredientId: pantryItems.ingredientId,
-    ingredientName: ingredients.name,
-    unit: pantryItems.unit,
-    quantity: sql<string>`sum(${pantryItems.quantity})`,
-    nearestExpiry: sql<string | null>`min(${pantryItems.expiryDate})`,
-  }).from(pantryItems)
-    .innerJoin(ingredients, eq(pantryItems.ingredientId, ingredients.ingredientId))
-    .where(eq(pantryItems.userId, userId))
-    .groupBy(pantryItems.ingredientId, ingredients.name, pantryItems.unit)
-    .orderBy(asc(ingredients.name));
+  try {
+    const db = await getDb();
+    if (!db) return [];
+    return await db.select({
+      ingredientId: pantryItems.ingredientId,
+      ingredientName: ingredients.name,
+      unit: pantryItems.unit,
+      quantity: sql<string>`sum(${pantryItems.quantity})`,
+      nearestExpiry: sql<string | null>`min(${pantryItems.expiryDate})`,
+    }).from(pantryItems)
+      .innerJoin(ingredients, eq(pantryItems.ingredientId, ingredients.ingredientId))
+      .where(eq(pantryItems.userId, userId))
+      .groupBy(pantryItems.ingredientId, ingredients.name, pantryItems.unit)
+      .orderBy(asc(ingredients.name));
+  } catch (error) {
+    console.warn("[getPantrySnapshot] Database query failed, returning empty:", error);
+    return [];
+  }
 }
 
 export async function addPantryItem(input: {
@@ -248,15 +253,20 @@ export async function getRecipeDetails(recipeId: number): Promise<RecipeDetails 
 }
 
 export async function listRecipes(filters?: { maxTime?: number; difficulty?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"; tag?: string }) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [];
-  if (filters?.maxTime !== undefined) conditions.push(lte(recipes.cookTimeMin, filters.maxTime));
-  if (filters?.difficulty) conditions.push(eq(recipes.difficultyLevel, filters.difficulty));
-  const base = await db.select().from(recipes).where(conditions.length ? and(...conditions) : undefined).orderBy(asc(recipes.name));
-  const detailed = await Promise.all(base.map(recipe => getRecipeDetails(recipe.recipeId)));
-  const filtered = detailed.filter((recipe): recipe is RecipeDetails => Boolean(recipe));
-  return filters?.tag ? filtered.filter(recipe => recipe.dietaryTags.some(tag => tag.toLowerCase() === filters.tag!.toLowerCase())) : filtered;
+  try {
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [];
+    if (filters?.maxTime !== undefined) conditions.push(lte(recipes.cookTimeMin, filters.maxTime));
+    if (filters?.difficulty) conditions.push(eq(recipes.difficultyLevel, filters.difficulty));
+    const base = await db.select().from(recipes).where(conditions.length ? and(...conditions) : undefined).orderBy(asc(recipes.name));
+    const detailed = await Promise.all(base.map(recipe => getRecipeDetails(recipe.recipeId)));
+    const filtered = detailed.filter((recipe): recipe is RecipeDetails => Boolean(recipe));
+    return filters?.tag ? filtered.filter(recipe => recipe.dietaryTags.some(tag => tag.toLowerCase() === filters.tag!.toLowerCase())) : filtered;
+  } catch (error) {
+    console.warn("[listRecipes] Database query failed, returning empty:", error);
+    return [];
+  }
 }
 
 export async function createRecipe(input: {
@@ -273,6 +283,12 @@ export async function createRecipe(input: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database is not configured");
+  if (input.sourceUrl) {
+    const existing = await db.select({ recipeId: recipes.recipeId }).from(recipes).where(eq(recipes.sourceUrl, input.sourceUrl)).limit(1);
+    if (existing[0]?.recipeId) {
+      return existing[0].recipeId;
+    }
+  }
   return db.transaction(async tx => {
     const inserted = await tx.insert(recipes).values({
       name: input.name,
@@ -296,24 +312,29 @@ export async function createRecipe(input: {
 }
 
 export async function findStoredRecipeCandidates(userId: number, filters: { maxTime?: number; difficulty?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"; tag?: string }) {
-  const [pantry, recipeList] = await Promise.all([getPantrySnapshot(userId), listRecipes(filters)]);
-  const availableByIngredient = new Map(pantry.map(item => [`${item.ingredientId}:${item.unit}`, Number(item.quantity)]));
-  return recipeList.map(recipe => {
-    const ingredientResults = recipe.ingredients.map(ingredient => {
-      const available = availableByIngredient.get(`${ingredient.ingredientId}:${ingredient.unit}`) ?? 0;
-      const required = Number(ingredient.quantityRequired);
-      return { ...ingredient, available, isAvailable: available >= required };
-    });
-    const availableCount = ingredientResults.filter(item => item.isAvailable).length;
-    const availabilityPercent = ingredientResults.length ? Math.round((availableCount / ingredientResults.length) * 100) : 0;
-    return {
-      ...recipe,
-      availabilityPercent,
-      availabilityStatus: availabilityPercent === 100 ? "FULLY_AVAILABLE" : availabilityPercent >= 75 ? "ALMOST_AVAILABLE" : "LOW_AVAILABILITY",
-      missingIngredients: ingredientResults.filter(item => !item.isAvailable).map(item => ({ name: item.name, required: item.quantityRequired, available: item.available, unit: item.unit })),
-      ingredients: ingredientResults,
-    };
-  }).sort((a, b) => b.availabilityPercent - a.availabilityPercent || (Number(b.rating ?? 0) - Number(a.rating ?? 0)) || a.cookTimeMin - b.cookTimeMin);
+  try {
+    const [pantry, recipeList] = await Promise.all([getPantrySnapshot(userId), listRecipes(filters)]);
+    const availableByIngredient = new Map(pantry.map(item => [`${item.ingredientId}:${item.unit}`, Number(item.quantity)]));
+    return recipeList.map(recipe => {
+      const ingredientResults = recipe.ingredients.map(ingredient => {
+        const available = availableByIngredient.get(`${ingredient.ingredientId}:${ingredient.unit}`) ?? 0;
+        const required = Number(ingredient.quantityRequired);
+        return { ...ingredient, available, isAvailable: available >= required };
+      });
+      const availableCount = ingredientResults.filter(item => item.isAvailable).length;
+      const availabilityPercent = ingredientResults.length ? Math.round((availableCount / ingredientResults.length) * 100) : 0;
+      return {
+        ...recipe,
+        availabilityPercent,
+        availabilityStatus: availabilityPercent === 100 ? "FULLY_AVAILABLE" : availabilityPercent >= 75 ? "ALMOST_AVAILABLE" : "LOW_AVAILABILITY",
+        missingIngredients: ingredientResults.filter(item => !item.isAvailable).map(item => ({ name: item.name, required: item.quantityRequired, available: item.available, unit: item.unit })),
+        ingredients: ingredientResults,
+      };
+    }).sort((a, b) => b.availabilityPercent - a.availabilityPercent || (Number(b.rating ?? 0) - Number(a.rating ?? 0)) || a.cookTimeMin - b.cookTimeMin);
+  } catch (error) {
+    console.warn("[findStoredRecipeCandidates] Database query failed, returning empty:", error);
+    return [];
+  }
 }
 
 export async function cookRecipe(userId: number, recipeId: number) {

@@ -107,13 +107,65 @@ export const appRouter = router({
       cookingLevel: difficulty.optional(),
       maxTime: z.number().int().positive().optional(),
       dietaryPreference: z.string().max(100).optional(),
+      excludeRecipeIds: z.array(z.number().int()).max(50).optional(),
+      excludeUrls: z.array(z.string()).max(50).optional(),
+      pantryItems: z.array(z.object({
+        ingredientId: z.number().int().optional(),
+        ingredientName: z.string(),
+        unit: z.string().default("piece"),
+        quantity: z.union([z.string(), z.number()]).transform(v => String(v)),
+      })).optional(),
     })).mutation(async ({ ctx, input }) => {
-      const stored = await findStoredRecipeCandidates(ctx.user.id, input);
-      const fullyAvailable = stored.filter(recipe => recipe.availabilityPercent === 100);
-      if (fullyAvailable.length) return { source: "DATABASE" as const, candidates: fullyAvailable.slice(0, 10), selected: fullyAvailable[0], storedRecipeId: null };
-      const pantry = await getPantrySnapshot(ctx.user.id);
-      const web = await recommendFromWeb({ userId: ctx.user.id, pantry, ...input });
-      return { source: "WEB" as const, storedCandidates: stored.slice(0, 10), ...web };
+      const stored = await findStoredRecipeCandidates(ctx.user.id, { maxTime: input.maxTime, difficulty: input.cookingLevel });
+      const excludeIds = new Set(input.excludeRecipeIds ?? []);
+
+      // Shuffle DB results so users see variety, then separate by availability tier
+      const shuffled = stored.filter(r => !excludeIds.has(r.recipeId));
+      const fullyAvailable = shuffled.filter(r => r.availabilityPercent === 100);
+      const almostAvailable = shuffled.filter(r => r.availabilityPercent >= 50 && r.availabilityPercent < 100);
+
+      // Fisher-Yates shuffle for DB results
+      const shuffleArr = <T>(a: T[]): T[] => { const c = [...a]; for (let i = c.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [c[i], c[j]] = [c[j], c[i]]; } return c; };
+      const dbCandidates = [...shuffleArr(fullyAvailable).slice(0, 6), ...shuffleArr(almostAvailable).slice(0, 4)];
+
+      // If we have 5+ fully-available DB recipes, return them directly without hitting the web
+      if (fullyAvailable.length >= 5) {
+        return { source: "DATABASE" as const, candidates: dbCandidates, storedRecipeId: null };
+      }
+
+      // Otherwise, supplement with web-retrieved recipes
+      const dbPantry = await getPantrySnapshot(ctx.user.id);
+      const pantry = dbPantry.length > 0 ? dbPantry : (input.pantryItems?.map((p, idx) => ({
+        ingredientId: p.ingredientId ?? (idx + 1),
+        ingredientName: p.ingredientName,
+        unit: p.unit,
+        quantity: p.quantity,
+        nearestExpiry: null,
+      })) ?? []);
+
+      // Skip web search if pantry is empty — no point searching
+      if (pantry.length === 0) {
+        return { source: "DATABASE" as const, candidates: dbCandidates, storedRecipeId: null };
+      }
+
+      const existingUrls = stored.filter(r => r.sourceUrl).map(r => r.sourceUrl!);
+      const web = await recommendFromWeb({
+        userId: ctx.user.id,
+        pantry,
+        cookingLevel: input.cookingLevel,
+        maxTime: input.maxTime,
+        dietaryPreference: input.dietaryPreference,
+        excludeUrls: [...(input.excludeUrls ?? []), ...existingUrls],
+      });
+
+      // Merge DB + web candidates into unified response
+      return {
+        source: "MIXED" as const,
+        candidates: dbCandidates,
+        webCandidates: web.validCandidates ?? [],
+        webInvalid: web.invalidCandidates ?? [],
+        storedRecipeIds: web.storedRecipeIds ?? [],
+      };
     }),
     cook: protectedProcedure.input(z.object({ recipeId: z.number().int().positive() })).mutation(({ ctx, input }) => cookRecipe(ctx.user.id, input.recipeId)),
   }),

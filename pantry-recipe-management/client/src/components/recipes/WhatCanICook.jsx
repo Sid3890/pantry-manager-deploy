@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sparkles, SlidersHorizontal, ChevronDown, ChevronUp, Database, CheckCircle2, ChefHat } from 'lucide-react';
+import { Sparkles, SlidersHorizontal, ChevronDown, ChevronUp, Database, CheckCircle2, ChefHat, AlertTriangle, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { usePantry } from '../../context/PantryContext';
 import { RecipeCard } from './RecipeCard';
@@ -18,6 +18,7 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
   const [meta, setMeta] = useState({ database_matches: 0, ai_fallbacks: 0, ready_to_cook_count: 0 });
   const [availabilityFilter, setAvailabilityFilter] = useState('ALL'); // 'ALL' | 'READY' | 'ALMOST'
   const [cookingLevel, setCookingLevel] = useState(currentUser?.cooking_level || 'BEGINNER');
+  const [backendError, setBackendError] = useState(null);
 
   const [filters, setFilters] = useState({
     maxTime: '',
@@ -28,16 +29,21 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
   const fetchRecommendations = useCallback(async () => {
     setLoading(true);
     setHasTriggeredSearch(true);
+    setBackendError(null);
     try {
-      const res = await api.recipes.getRecommendations({ ...filters, cookingLevel });
+      const res = await api.recipes.getRecommendations({ ...filters, cookingLevel, pantryItems });
       setRecipes(res.recipes);
       setMeta(res.metadata || {});
+      if (res.metadata?.error) {
+        setBackendError(res.metadata.error);
+      }
     } catch (err) {
       console.error('Error fetching recommendations', err);
+      setBackendError('Failed to fetch recommendations. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [filters, cookingLevel]);
+  }, [filters, cookingLevel, pantryItems]);
 
   // Initial load on first render
   useEffect(() => {
@@ -46,6 +52,14 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
 
   const handleResetFilters = () => {
     setFilters({ maxTime: '', dietary: 'ALL', difficulty: 'ALL' });
+  };
+
+  const handleClearHistory = () => {
+    try {
+      localStorage.removeItem('pantry_seen_recipe_ids');
+      localStorage.removeItem('pantry_seen_urls');
+    } catch {}
+    fetchRecommendations();
   };
 
   const hasActiveFilters = Boolean(filters.maxTime || filters.dietary !== 'ALL' || filters.difficulty !== 'ALL');
@@ -153,6 +167,17 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
         />
       )}
 
+      {/* Backend Connection Error */}
+      {backendError && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
+          <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Recipe Engine Unavailable</p>
+            <p className="text-xs text-amber-700 mt-0.5">{backendError}</p>
+          </div>
+        </div>
+      )}
+
       {/* Recommendation Results Header & Stats */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
         <div className="flex items-center gap-3 flex-wrap">
@@ -193,7 +218,7 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Ready Now (100%)
+            Ready Now ({recipes.filter(r => r.availability?.percentage === 100).length})
           </button>
           <button
             onClick={() => setAvailabilityFilter('ALMOST')}
@@ -203,33 +228,85 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Almost There
+            Almost There ({recipes.filter(r => r.availability?.percentage < 100).length})
           </button>
         </div>
+
+        {/* Fresh Results Button */}
+        <button
+          onClick={handleClearHistory}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold transition-colors disabled:opacity-50 self-start sm:self-auto cursor-pointer"
+          title="Clear recipe history to see completely new recommendations"
+        >
+          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+          Get Fresh Results
+        </button>
       </div>
 
       {/* Recipe Cards Feed */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <RecipeCardSkeleton />
-          <RecipeCardSkeleton />
-          <RecipeCardSkeleton />
+        <div className="space-y-4">
+          <div className="bg-indigo-50/70 border border-indigo-100 rounded-2xl p-4 text-center">
+            <p className="text-xs font-semibold text-indigo-700 animate-pulse">
+              Searching for recipes using your ingredients...
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <RecipeCardSkeleton />
+            <RecipeCardSkeleton />
+            <RecipeCardSkeleton />
+          </div>
+        </div>
+      ) : pantryItems.length === 0 ? (
+        <div className="bg-white rounded-3xl p-12 text-center border border-slate-100">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto mb-3">
+            <ChefHat className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-slate-800">Your pantry is empty</h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+            Add ingredients to your pantry to discover recipes.
+          </p>
         </div>
       ) : displayedRecipes.length === 0 ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-slate-100">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
             <ChefHat className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-bold text-slate-800">No matching recipes found</h3>
+          <h3 className="text-base font-bold text-slate-800">
+            {availabilityFilter === 'READY'
+              ? 'No recipes ready with 100% of ingredients'
+              : 'No suitable recipes found'}
+          </h3>
           <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            Try loosening your cooking time or dietary filters, or add more items to your pantry.
+            {availabilityFilter === 'READY' && recipes.length > 0 ? (
+              <span>
+                You have {recipes.length} recipe{recipes.length > 1 ? 's' : ''} in the "Almost There" tab that only require a few additional ingredients!
+              </span>
+            ) : hasActiveFilters ? (
+              <span>No recipes matched your active filters. Try loosening your cooking time or dietary filters.</span>
+            ) : (
+              <span>No suitable recipes were found for your current ingredients and filters. Try changing your filters or searching again.</span>
+            )}
           </p>
-          <button
-            onClick={handleResetFilters}
-            className="mt-4 px-4 py-2 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
-          >
-            Reset Filters
-          </button>
+          <div className="flex items-center justify-center gap-3 mt-4">
+            {availabilityFilter === 'READY' && recipes.length > 0 ? (
+              <button
+                onClick={() => setAvailabilityFilter('ALMOST')}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+              >
+                View Almost There Recipes
+              </button>
+            ) : null}
+            {hasActiveFilters && (
+              <button
+                onClick={handleResetFilters}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

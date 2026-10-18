@@ -65,9 +65,9 @@ export const PantryDashboard = ({ onNavigateToCook }) => {
               : 'bg-white border-slate-100 hover:border-slate-200'
           }`}
         >
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Stock</div>
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Unique Ingredients</div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{stats.total}</div>
-          <div className="text-[11px] text-slate-400 mt-1">Unique ingredients</div>
+          <div className="text-[11px] text-slate-400 mt-1">Distinct stock items</div>
         </button>
 
         {/* Fresh Items */}

@@ -1,6 +1,17 @@
 import { invokeLLM } from "./_core/llm";
 import { getOrCreateIngredient, getPantrySnapshot, createRecipe } from "./db";
 
+function shuffle<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+const MEAL_KEYWORDS = ["easy", "quick", "healthy", "homemade", "simple", "dinner", "lunch", "breakfast", "snack", "comfort food", "weeknight", "one pot", "30 minute"];
+
 export type PublishedRecipeCandidate = {
   name: string;
   url: string;
@@ -63,27 +74,115 @@ function parseRecipeJsonLd(html: string, fallbackUrl: string): PublishedRecipeCa
   return undefined;
 }
 
-async function searchPublishedRecipes(query: string): Promise<PublishedRecipeCandidate[]> {
+export async function searchPublishedRecipes(query: string, excludeUrls: Set<string> = new Set()): Promise<PublishedRecipeCandidate[]> {
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${query} recipe`)}`;
-  const response = await fetch(searchUrl, { headers: { "user-agent": "PantryRecipeManagement/1.0" } });
-  if (!response.ok) return [];
-  const html = await response.text();
-  const links = Array.from(html.matchAll(/<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi))
-    .slice(0, 6)
-    .map(match => ({ url: match[1], title: stripHtml(match[2]) }));
-  const candidates: PublishedRecipeCandidate[] = [];
-  for (const link of links) {
+  let html = "";
+  try {
+    const response = await fetch(searchUrl, {
+      headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (response.ok && response.status === 200) {
+      html = await response.text();
+    }
+  } catch {
+    html = "";
+  }
+
+  // If DDG returned a captcha / blocked status, gracefully fallback to free Jina search proxy
+  if (!html || html.includes("anomaly-modal") || !html.includes("result__a")) {
     try {
-      const page = await fetch(link.url, { headers: { "user-agent": "PantryRecipeManagement/1.0" } });
-      if (!page.ok) continue;
-      const recipe = parseRecipeJsonLd(await page.text(), link.url);
-      if (recipe) candidates.push(recipe);
+      const fallbackRes = await fetch(`https://r.jina.ai/${searchUrl}`, { signal: AbortSignal.timeout(10000) });
+      if (fallbackRes.ok) {
+        const text = await fallbackRes.text();
+        const uddgMatches = Array.from(text.matchAll(/uddg=([^&)\s]+)/g));
+        const uniqueUrls = Array.from(new Set(
+          uddgMatches
+            .map(m => {
+              try {
+                return decodeURIComponent(m[1]);
+              } catch {
+                return null;
+              }
+            })
+            .filter((u): u is string => Boolean(u && u.startsWith("http") && !u.includes("duckduckgo.com") && !excludeUrls.has(u)))
+        )).slice(0, 8);
+
+        if (uniqueUrls.length > 0) {
+          const results = await Promise.allSettled(
+            uniqueUrls.map(async url => {
+              try {
+                const page = await fetch(url, {
+                  headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+                  signal: AbortSignal.timeout(6000),
+                });
+                if (!page.ok) return null;
+                const recipe = parseRecipeJsonLd(await page.text(), url);
+                return recipe && !excludeUrls.has(recipe.url) ? recipe : null;
+              } catch {
+                return null;
+              }
+            })
+          );
+          const candidates: PublishedRecipeCandidate[] = [];
+          for (const r of results) {
+            if (r.status === "fulfilled" && r.value) {
+              candidates.push(r.value);
+            }
+          }
+          if (candidates.length > 0) return candidates;
+        }
+      }
     } catch {
-      continue;
+      // Continue to parse whatever html we have
+    }
+  }
+
+  // DDG wraps result URLs in redirect links: //duckduckgo.com/l/?uddg=<encoded-actual-url>&rut=...
+  const rawLinks = Array.from(html.matchAll(/<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi));
+  const links = rawLinks
+    .map(match => {
+      let href = match[1].replace(/&amp;/g, '&');
+      if (href.startsWith('//')) href = `https:${href}`;
+      try {
+        const parsed = new URL(href);
+        if (parsed.hostname.includes('duckduckgo.com')) {
+          const uddg = parsed.searchParams.get('uddg');
+          if (uddg) href = decodeURIComponent(uddg);
+        }
+      } catch {
+        return null;
+      }
+      return { url: href, title: stripHtml(match[2]) };
+    })
+    .filter((link): link is { url: string; title: string } => link !== null && !excludeUrls.has(link.url))
+    .slice(0, 8);
+
+  const results = await Promise.allSettled(
+    links.map(async link => {
+      try {
+        const page = await fetch(link.url, {
+          headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!page.ok) return null;
+        const recipe = parseRecipeJsonLd(await page.text(), link.url);
+        return recipe && !excludeUrls.has(recipe.url) ? recipe : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const candidates: PublishedRecipeCandidate[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value) {
+      candidates.push(r.value);
     }
   }
   return candidates;
 }
+
 
 function normalize(value: string) {
   const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
@@ -93,6 +192,7 @@ function normalize(value: string) {
     pepper: "black pepper", capsicum: "bell peppers", cilantro: "coriander", yoghurt: "yogurt", curd: "yogurt",
     dahi: "yogurt", chilli: "green chillies", chili: "green chillies", garlic: "garlic", pea: "green peas",
     chickpea: "chickpeas", lentil: "lentils", prawn: "prawns", shrimp: "prawns", lime: "lemons",
+    butter: "butter", chicken: "chicken", rice: "rice", cheese: "cheese", milk: "milk", flour: "flour",
   };
   if (aliases[cleaned]) return aliases[cleaned];
   if (cleaned.length > 4 && cleaned.endsWith("ies")) return `${cleaned.slice(0, -3)}y`;
@@ -100,22 +200,82 @@ function normalize(value: string) {
   return cleaned;
 }
 
+function findPantryMatch(recipeIngredientName: string, pantry: PantrySnapshot) {
+  const cleanRecipeIng = normalize(recipeIngredientName);
+  for (const item of pantry) {
+    const cleanPantry = normalize(item.ingredientName);
+    if (cleanRecipeIng === cleanPantry) return item;
+    if (cleanRecipeIng.includes(cleanPantry) || cleanPantry.includes(cleanRecipeIng)) return item;
+    // Word boundary match
+    const pantryWords = cleanPantry.split(" ").filter(w => w.length > 2);
+    if (pantryWords.some(w => cleanRecipeIng.includes(w))) return item;
+  }
+  return null;
+}
+
 export function calculateAdaptation(candidate: PublishedRecipeCandidate, pantry: PantrySnapshot) {
-  const pantryByName = new Map(pantry.map(item => [normalize(item.ingredientName), { ...item, quantity: Number(item.quantity) }]));
-  const mapped = candidate.ingredients.map(item => ({ ...item, pantry: pantryByName.get(normalize(item.name)) }));
+  const mapped = candidate.ingredients.map(item => {
+    const matchedPantry = findPantryMatch(item.name, pantry);
+    return {
+      ...item,
+      pantry: matchedPantry ? { ...matchedPantry, quantity: Number(matchedPantry.quantity) } : undefined,
+    };
+  });
+
+  // Split missing vs present
   const missing = mapped.filter(item => !item.pantry || item.pantry.quantity <= 0);
   if (missing.length) return { valid: false as const, reason: "Essential ingredients are missing.", missing: missing.map(item => item.name), ingredients: candidate.ingredients };
-  const factors = mapped.map(item => item.pantry!.unit === item.unit ? item.pantry!.quantity / item.quantity : 0);
-  const scaleFactor = Math.min(1, ...factors);
-  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return { valid: false as const, reason: "Ingredient units are incompatible with the canonical pantry units.", missing: [], ingredients: candidate.ingredients };
+
+  // Unit conversion helper
+  function convertQuantity(qty: number, fromUnit: string, toUnit: string): number | null {
+    const f = fromUnit.toLowerCase().trim();
+    const t = toUnit.toLowerCase().trim();
+    if (f === t) return qty;
+    if ((f === "kg" || f === "kilogram") && (t === "g" || t === "gram" || t === "grams")) return qty * 1000;
+    if ((f === "g" || f === "gram" || f === "grams") && (t === "kg" || t === "kilogram")) return qty / 1000;
+    if ((f === "l" || f === "liter" || f === "litre") && (t === "ml" || t === "milliliter")) return qty * 1000;
+    if ((f === "ml" || f === "milliliter") && (t === "l" || t === "liter" || t === "litre")) return qty / 1000;
+    return null;
+  }
+
+  // Check for unit compatibility (must be identical unit or convertable)
+  const incompatibleUnits: string[] = [];
+  const unitFactors: number[] = [];
+
+  for (const item of mapped) {
+    if (!item.pantry) continue;
+    if (item.pantry.unit !== item.unit) {
+      incompatibleUnits.push(`${item.name} (${item.unit} vs pantry ${item.pantry.unit})`);
+    } else {
+      unitFactors.push(item.pantry.quantity / item.quantity);
+    }
+  }
+
+  if (incompatibleUnits.length > 0) {
+    return { valid: false as const, reason: "Ingredient units are incompatible.", missing: incompatibleUnits, ingredients: candidate.ingredients };
+  }
+
+  const scaleFactor = Math.min(1, ...unitFactors);
+  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+    return { valid: false as const, reason: "Ingredient units are incompatible.", missing: [], ingredients: candidate.ingredients };
+  }
+
   const ingredients = mapped.map(item => {
     const scaled = item.quantity * scaleFactor;
     const countable = ["piece", "pieces", "egg", "eggs", "unit", "units"].includes(item.unit.toLowerCase());
     const quantity = countable ? Math.floor(scaled) : Number(scaled.toFixed(3));
     return { ...item, quantity };
   });
-  const invalid = ingredients.filter(item => item.quantity <= 0 || !item.pantry || item.quantity > item.pantry.quantity + 0.000001);
-  if (invalid.length) return { valid: false as const, reason: "Proportional scaling would create an unusable quantity or exceed pantry stock.", missing: invalid.map(item => item.name), ingredients };
+
+  const invalid = ingredients.filter(item => {
+    const convertedPantry = convertQuantity(item.pantry!.quantity, item.pantry!.unit, item.unit) ?? 0;
+    return item.quantity <= 0 || item.quantity > convertedPantry + 0.000001;
+  });
+
+  if (invalid.length) {
+    return { valid: false as const, reason: "Proportional scaling would create an unusable quantity or exceed pantry stock.", missing: invalid.map(item => item.name), ingredients };
+  }
+
   return { valid: true as const, scaleFactor, missing: [], ingredients };
 }
 
@@ -125,62 +285,113 @@ export async function recommendFromWeb(input: {
   cookingLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
   maxTime?: number;
   dietaryPreference?: string;
+  excludeUrls?: string[];
 }) {
-  const ingredientQuery = input.pantry.map(item => item.ingredientName).slice(0, 8).join(" ");
-  if (!ingredientQuery) return { candidates: [], selected: null, storedRecipeId: null };
-  const candidates = await searchPublishedRecipes(`${input.dietaryPreference ?? ""} ${ingredientQuery}`.trim());
-  const timeFiltered = input.maxTime !== undefined ? candidates.filter(candidate => candidate.cookTimeMin <= input.maxTime!) : candidates;
-  if (!timeFiltered.length) return { candidates: [], selected: null, storedRecipeId: null };
+  // Shuffle pantry ingredients and pick a random subset to vary the search each time
+  const shuffledIngredients = shuffle(input.pantry.map(item => item.ingredientName));
+  const subsetSize = Math.min(shuffledIngredients.length, 3 + Math.floor(Math.random() * 4)); // 3-6 ingredients
+  const ingredientQuery = shuffledIngredients.slice(0, subsetSize).join(" ");
+  if (!ingredientQuery) return { candidates: [], validCandidates: [], invalidCandidates: [], storedRecipeIds: [] };
 
-  let selectedIndex = 0;
+  // Add a random meal keyword to further vary results
+  const mealKeyword = MEAL_KEYWORDS[Math.floor(Math.random() * MEAL_KEYWORDS.length)];
+  const dietaryPart = input.dietaryPreference ?? "";
+  const query = `${dietaryPart} ${mealKeyword} ${ingredientQuery}`.trim();
+
+  const excludeUrlSet = new Set(input.excludeUrls ?? []);
+  let candidates = await searchPublishedRecipes(query, excludeUrlSet);
+  if (!candidates.length) {
+    // Fallback: search with pure top 2-3 ingredients for maximum web match recall
+    const fallbackQuery = `${dietaryPart} ${shuffledIngredients.slice(0, 3).join(" ")}`.trim();
+    candidates = await searchPublishedRecipes(fallbackQuery, excludeUrlSet);
+  }
+  const timeFiltered = input.maxTime !== undefined ? candidates.filter(candidate => candidate.cookTimeMin <= input.maxTime!) : candidates;
+  if (!timeFiltered.length) return { candidates: [], validCandidates: [], invalidCandidates: [], storedRecipeIds: [] };
+
+  // Use LLM to rank candidates by pantry fit (best-effort, falls back to pantry validation)
+  let ranking: number[] = timeFiltered.map((_, i) => i);
   try {
-    const response = await invokeLLM({
+    const llmPromise = invokeLLM({
       messages: [
-        { role: "system", content: "You select among real published recipe candidates. Never invent a recipe or ingredient. Return only valid JSON." },
-        { role: "user", content: JSON.stringify({ pantry: input.pantry, preferences: { cookingLevel: input.cookingLevel, maxTime: input.maxTime, dietaryPreference: input.dietaryPreference }, candidates: timeFiltered.map((candidate, index) => ({ index, name: candidate.name, url: candidate.url, ingredients: candidate.ingredients, cookTimeMin: candidate.cookTimeMin, difficultyLevel: candidate.difficultyLevel, rating: candidate.rating, dietaryTags: candidate.dietaryTags })) }) },
+        { role: "system", content: "You rank real published recipe candidates by how well they fit the user's pantry and preferences. Never invent a recipe. Return only valid JSON." },
+        { role: "user", content: JSON.stringify({ pantry: input.pantry.map(p => ({ name: p.ingredientName, quantity: Number(p.quantity), unit: p.unit })), preferences: { cookingLevel: input.cookingLevel, maxTime: input.maxTime, dietaryPreference: input.dietaryPreference }, candidates: timeFiltered.map((candidate, index) => ({ index, name: candidate.name, url: candidate.url, ingredients: candidate.ingredients.map(i => i.name), cookTimeMin: candidate.cookTimeMin, rating: candidate.rating })) }) },
       ],
       response_format: {
         type: "json_schema",
         json_schema: {
-          name: "recipe_selection",
+          name: "recipe_ranking",
           strict: true,
           schema: {
             type: "object",
-            properties: { selectedIndex: { type: "integer" }, rationale: { type: "string" }, canScale: { type: "boolean" } },
-            required: ["selectedIndex", "rationale", "canScale"],
+            properties: { rankedIndices: { type: "array", items: { type: "integer" } }, rationale: { type: "string" } },
+            required: ["rankedIndices", "rationale"],
             additionalProperties: false,
           },
         },
       },
     });
+    const response = await Promise.race([
+      llmPromise,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("LLM timeout")), 10000)),
+    ]);
     const content = response.choices?.[0]?.message?.content;
     const parsed = typeof content === "string" ? JSON.parse(content) : null;
-    if (parsed && Number.isInteger(parsed.selectedIndex) && parsed.selectedIndex >= 0 && parsed.selectedIndex < timeFiltered.length) selectedIndex = parsed.selectedIndex;
+    if (parsed?.rankedIndices && Array.isArray(parsed.rankedIndices)) {
+      const validIndices = parsed.rankedIndices.filter((i: number) => Number.isInteger(i) && i >= 0 && i < timeFiltered.length);
+      if (validIndices.length) ranking = validIndices;
+    }
   } catch {
-    // Deterministic fallback still only chooses one real retrieved candidate.
+    // Fallback: use existing order, validation will filter.
   }
 
-  const candidate = timeFiltered[selectedIndex];
-  const validation = calculateAdaptation(candidate, input.pantry);
-  if (!validation.valid) return { candidates: timeFiltered, selected: { candidate, ...validation }, storedRecipeId: null };
+  // Validate ALL candidates against pantry, not just a single one
+  const validCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = [];
+  const invalidCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = [];
 
-  const ingredientRows = [];
-  for (const item of validation.ingredients) {
-    const existing = input.pantry.find(pantryItem => normalize(pantryItem.ingredientName) === normalize(item.name));
-    const ingredient = existing ? { ingredientId: existing.ingredientId } : await getOrCreateIngredient(item.name, item.unit);
-    ingredientRows.push({ ingredientId: ingredient.ingredientId, quantityRequired: item.quantity.toFixed(3), unit: item.unit });
+  for (const idx of ranking) {
+    const candidate = timeFiltered[idx];
+    if (!candidate) continue;
+    const validation = calculateAdaptation(candidate, input.pantry);
+    if (validation.valid) {
+      validCandidates.push({ candidate, validation });
+    } else {
+      invalidCandidates.push({ candidate, validation });
+    }
   }
-  const storedRecipeId = await createRecipe({
-    name: candidate.name,
-    steps: candidate.steps,
-    cookTimeMin: candidate.cookTimeMin,
-    difficultyLevel: input.cookingLevel ?? candidate.difficultyLevel,
-    utensilCount: 0,
-    source: "WEB_RETRIEVED",
-    sourceUrl: candidate.url,
-    rating: candidate.rating?.toFixed(2),
-    ingredients: ingredientRows,
-    dietaryTags: candidate.dietaryTags,
-  });
-  return { candidates: timeFiltered, selected: { candidate, ...validation }, storedRecipeId };
+
+  // Store valid candidates in Oracle DB
+  const storedRecipeIds: number[] = [];
+  for (const { candidate, validation } of validCandidates) {
+    try {
+      if (!validation.valid) continue;
+      const ingredientRows = [];
+      for (const item of validation.ingredients) {
+        const existing = input.pantry.find(pantryItem => normalize(pantryItem.ingredientName) === normalize(item.name));
+        const ingredient = existing ? { ingredientId: existing.ingredientId } : await getOrCreateIngredient(item.name, item.unit);
+        ingredientRows.push({ ingredientId: ingredient.ingredientId, quantityRequired: item.quantity.toFixed(3), unit: item.unit });
+      }
+      const storedId = await createRecipe({
+        name: candidate.name,
+        steps: candidate.steps,
+        cookTimeMin: candidate.cookTimeMin,
+        difficultyLevel: input.cookingLevel ?? candidate.difficultyLevel,
+        utensilCount: 0,
+        source: "WEB_RETRIEVED",
+        sourceUrl: candidate.url,
+        rating: candidate.rating?.toFixed(2),
+        ingredients: ingredientRows,
+        dietaryTags: candidate.dietaryTags,
+      });
+      storedRecipeIds.push(storedId);
+    } catch {
+      // Skip recipe if storage fails (e.g. duplicate URL)
+    }
+  }
+
+  return {
+    candidates: timeFiltered,
+    validCandidates: validCandidates.map(v => ({ candidate: v.candidate, ...v.validation })),
+    invalidCandidates: invalidCandidates.slice(0, 5).map(v => ({ candidate: v.candidate, ...v.validation })),
+    storedRecipeIds,
+  };
 }

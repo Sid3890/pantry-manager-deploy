@@ -124,7 +124,7 @@ export const KitchenDashboard = ({ onNavigateToCook, onNavigateToPantry }) => {
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-[#6B726A] uppercase tracking-wider">
-              Total Stock
+              Unique Ingredients
             </span>
             <div className="w-8 h-8 rounded-xl bg-[#F8F8F4] text-[#20251F] flex items-center justify-center">
               <Package className="w-4 h-4" />
@@ -134,7 +134,7 @@ export const KitchenDashboard = ({ onNavigateToCook, onNavigateToPantry }) => {
             {stats.total}
           </div>
           <div className="text-xs text-[#6B726A] mt-1 font-medium">
-            Unique ingredients
+            Distinct stock items
           </div>
         </button>
 
