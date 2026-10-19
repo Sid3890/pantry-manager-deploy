@@ -1,12 +1,6 @@
 // Mock seed data matching Oracle Relational Database Schema & System Master Document
 
-export const INITIAL_USER = {
-  user_id: 1,
-  name: "Alex Rivera",
-  email: "alex.rivera@kitchen.io",
-  cooking_level: "BEGINNER", // 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED'
-  joined_date: "2026-08-15"
-};
+export const INITIAL_USER = null;
 
 export const CATEGORIES = [
   { cat_id: 1, label: "Dairy & Eggs", icon: "🥛", shelf_life_days: 10 },

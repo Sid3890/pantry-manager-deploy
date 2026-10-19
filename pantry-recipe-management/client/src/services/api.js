@@ -200,22 +200,59 @@ export const api = {
       if (backendUser) {
         currentUser = {
           user_id: backendUser.id ?? backendUser.user_id ?? 1,
-          name: backendUser.name ?? currentUser.name,
-          email: backendUser.email ?? currentUser.email,
-          cooking_level: backendUser.cookingLevel ?? backendUser.cooking_level ?? currentUser.cooking_level
+          name: backendUser.name ?? currentUser?.name ?? 'User',
+          email: backendUser.email ?? currentUser?.email ?? '',
+          cooking_level: backendUser.cookingLevel ?? backendUser.cooking_level ?? currentUser?.cooking_level ?? 'BEGINNER'
         };
         setStorage('user', currentUser);
         return currentUser;
       }
-      return null;
+      return currentUser;
     },
 
-    async login() {
-      throw new Error('Use Google sign-in to authenticate.');
+    async login({ email, password }) {
+      // Try backend first (if configured with Google OAuth, this won't apply)
+      // Fall back to localStorage-based auth
+      await delay(200);
+      const users = getStorage('registered_users', []);
+      const user = users.find(u => u.email === email && u.password === password);
+      if (!user) throw new Error('Invalid email or password. Please check your credentials or create an account.');
+      const sessionUser = {
+        user_id: user.user_id,
+        name: user.name,
+        email: user.email,
+        cooking_level: user.cooking_level || 'BEGINNER'
+      };
+      currentUser = sessionUser;
+      setStorage('user', sessionUser);
+      return { user: sessionUser };
     },
 
-    async register() {
-      throw new Error('Use Google sign-in to create an account.');
+    async register({ name, email, password, cooking_level }) {
+      await delay(200);
+      const users = getStorage('registered_users', []);
+      if (users.some(u => u.email === email)) {
+        throw new Error('An account with this email already exists. Please sign in instead.');
+      }
+      const newUser = {
+        user_id: Date.now(),
+        name,
+        email,
+        password,
+        cooking_level: cooking_level || 'BEGINNER',
+        joined_date: new Date().toISOString().slice(0, 10)
+      };
+      users.push(newUser);
+      setStorage('registered_users', users);
+      const sessionUser = {
+        user_id: newUser.user_id,
+        name: newUser.name,
+        email: newUser.email,
+        cooking_level: newUser.cooking_level
+      };
+      currentUser = sessionUser;
+      setStorage('user', sessionUser);
+      return { user: sessionUser };
     },
 
     async logout() {

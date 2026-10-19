@@ -120,7 +120,7 @@ export const PantryCard = ({ item, onUpdateQuantity, onRemove, onEdit }) => {
 
           <button
             type="button"
-            onClick={() => { setIsRemoving(true); onRemove(item.item_id, false); }}
+            onClick={() => { if (window.confirm(`Remove "${item.name}" from your pantry?`)) { setIsRemoving(true); onRemove(item.item_id, false); } }}
             className="p-1.5 rounded-xl text-[#6B726A] hover:text-[#D9534F] hover:bg-rose-50 transition-all active:scale-90 cursor-pointer"
             title="Delete item"
             aria-label={`Remove ${item.name}`}

@@ -43,21 +43,7 @@ export const AuthProvider = ({ children }) => {
     setCurrentUser(updated);
   };
 
-  const loginAsDemo = () => {
-    const demoUser = {
-      user_id: 1,
-      name: 'Alex Rivera',
-      email: 'alex.rivera@kitchen.local',
-      cooking_level: 'BEGINNER'
-    };
-    setCurrentUser(demoUser);
-    try {
-      localStorage.setItem('pantry_user', JSON.stringify(demoUser));
-    } catch {
-      // ignore
-    }
-    return demoUser;
-  };
+
 
   return (
     <AuthContext.Provider
@@ -68,7 +54,6 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         updateCookingLevel,
-        loginAsDemo,
         isAuthenticated: Boolean(currentUser)
       }}
     >

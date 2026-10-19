@@ -8,6 +8,11 @@ export const RecipeCard = ({ recipe, onSelect }) => {
   const isReady = availability?.isFullyAvailable || availability?.percentage === 100;
   const isAlmost = availability?.tier === 'almost' || (availability?.percentage >= 75 && availability?.percentage < 100);
 
+  // Split ingredients into available and missing for display
+  const allIngredients = recipe.ingredients || [];
+  const availableIngredients = allIngredients.filter(i => i.is_available !== false);
+  const missingIngredientsList = allIngredients.filter(i => i.is_available === false);
+
   return (
     <div
       onClick={() => onSelect(recipe)}
@@ -63,15 +68,34 @@ export const RecipeCard = ({ recipe, onSelect }) => {
           </div>
         )}
 
-        {/* Missing Ingredient Warning */}
-        {isAlmost && availability.missingIngredients?.length > 0 && (
-          <div className="mt-3 p-3 rounded-2xl bg-amber-50 border border-amber-200/70 text-xs text-amber-900 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <div className="truncate">
-              <span className="font-bold">Missing: </span>
-              <span>
-                {availability.missingIngredients.map(m => `${m.missing} ${m.unit} ${m.name}`).join(', ')}
+        {/* Ingredients Availability Breakdown */}
+        {allIngredients.length > 0 && (
+          <div className="mt-3 space-y-2">
+            <div className="text-xs font-bold text-[#20251F] flex items-center gap-1.5">
+              <span>Ingredients:</span>
+              <span className={`${isReady ? 'text-[#287A52]' : missingIngredientsList.length > 0 ? 'text-amber-700' : 'text-[#287A52]'}`}>
+                {availableIngredients.length}/{allIngredients.length} available
               </span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {availableIngredients.map(ing => (
+                <span
+                  key={ing.name}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-[10px] font-medium text-emerald-800"
+                >
+                  <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate max-w-[80px]">{ing.name}</span>
+                </span>
+              ))}
+              {missingIngredientsList.map(ing => (
+                <span
+                  key={ing.name}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200/80 text-[10px] font-medium text-amber-800"
+                >
+                  <AlertCircle className="w-2.5 h-2.5 shrink-0" />
+                  <span className="truncate max-w-[80px]">{ing.name}</span>
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -113,7 +137,7 @@ export const RecipeCard = ({ recipe, onSelect }) => {
       {/* Action CTA */}
       <div className="mt-6 pt-4 border-t border-[#E6E8E1] flex items-center justify-between">
         <div className="text-xs text-[#6B726A] font-medium">
-          {recipe.ingredients.length} required ingredients
+          {availableIngredients.length}/{allIngredients.length} ingredients in stock
         </div>
 
         <button

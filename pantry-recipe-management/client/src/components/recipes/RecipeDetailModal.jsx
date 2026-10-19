@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { X, Clock, UtensilsCrossed, CheckCircle2, AlertCircle, Sparkles, ChefHat, Check } from 'lucide-react';
+import { X, Clock, UtensilsCrossed, CheckCircle2, AlertCircle, Sparkles, ChefHat, Check, ShoppingCart } from 'lucide-react';
 import { RecipeSourceBadge, AvailabilityBadge } from '../common/Badge';
 
 export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
   const [completedSteps, setCompletedSteps] = useState({});
   const [isCooking, setIsCooking] = useState(false);
+  const [activeTab, setActiveTab] = useState('steps'); // 'steps' | 'ingredients' | 'all'
 
   if (!isOpen || !recipe) return null;
 
@@ -114,97 +115,203 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
             </div>
           )}
 
-          {/* Ingredients Availability Checklist */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-                Ingredients ({recipe.ingredients.length})
-              </h3>
-              <span className="text-xs text-slate-400">
-                Pantry inventory check
-              </span>
-            </div>
+          {/* Navigation Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/80 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setActiveTab('steps')}
+              className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'steps'
+                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ChefHat className="w-3.5 h-3.5 text-[#287A52]" />
+              <span>Step-by-Step ({recipe.steps?.length || 0})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('ingredients')}
+              className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'ingredients'
+                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <UtensilsCrossed className="w-3.5 h-3.5 text-[#287A52]" />
+              <span>Ingredients ({recipe.ingredients?.length || 0})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>All Details</span>
+            </button>
+          </div>
 
-            <div className="space-y-2">
-              {availability?.ingredientStatuses?.map((ing, idx) => {
-                const isAvailable = ing.is_available;
-                return (
-                  <div
-                    key={idx}
-                    className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
-                      isAvailable
-                        ? 'bg-emerald-50/40 border-emerald-200/80 text-slate-800'
-                        : 'bg-amber-50/60 border-amber-200/90 text-amber-950'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                        isAvailable ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-                      }`}>
-                        {isAvailable ? <Check className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
-                      </div>
-                      <div>
-                        <span className="text-sm font-bold">{ing.name}</span>
-                        <div className="text-xs text-slate-500">
-                          Recipe requires: <strong className="text-slate-700">{ing.quantity_required} {ing.unit}</strong>
-                        </div>
-                      </div>
-                    </div>
+          {/* Tab 1: Step-by-Step Cooking Guide (with Detailed Missing Ingredients Panel) */}
+          {(activeTab === 'steps' || activeTab === 'all') && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                  <ChefHat className="w-4 h-4 text-[#287A52]" />
+                  <span>Cooking Instructions</span>
+                </h3>
+                <span className="text-xs text-slate-500 font-medium">
+                  {Object.values(completedSteps).filter(Boolean).length}/{recipe.steps.length} complete &middot; Tap step to track
+                </span>
+              </div>
 
-                    <div className="text-right">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                        isAvailable
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-900'
-                      }`}>
-                        {isAvailable
-                          ? `In Stock: ${ing.available_in_pantry} ${ing.unit}`
-                          : `Missing (Have: ${ing.available_in_pantry} ${ing.unit})`}
+              {/* Missing Ingredients Detail Panel (prominently shown when step-by-step is open) */}
+              {availability?.missingIngredients?.length > 0 && (
+                <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-extrabold text-amber-950 uppercase tracking-wider">
+                        Missing Ingredients &mdash; Action Required
                       </span>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Step-by-Step Cooking Guide with Interactive Checklist */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-                Cooking Instructions
-              </h3>
-              <span className="text-xs text-slate-400">
-                {Object.values(completedSteps).filter(Boolean).length}/{recipe.steps.length} complete · Tap a step to track progress
-              </span>
-            </div>
-
-            <ol className="space-y-2.5">
-              {recipe.steps.map((step, idx) => {
-                const isChecked = completedSteps[idx];
-                return (
-                  <li
-                    key={idx}
-                    onClick={() => toggleStep(idx)}
-                    className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
-                      isChecked
-                        ? 'bg-slate-100/80 border-slate-200 text-slate-400 line-through'
-                        : 'bg-white border-slate-100 hover:border-slate-200 text-slate-800'
-                    }`}
-                  >
-                    <span className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${
-                      isChecked
-                        ? 'bg-slate-300 text-white'
-                        : 'bg-emerald-100 text-emerald-800'
-                    }`}>
-                      {idx + 1}
+                    <span className="text-[11px] font-bold bg-amber-200 text-amber-900 px-2.5 py-0.5 rounded-full">
+                      {availability.missingIngredients.length} item{availability.missingIngredients.length > 1 ? 's' : ''} missing
                     </span>
-                    <span className="text-sm leading-relaxed pt-0.5"><span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700/70 mb-0.5">{idx === 0 ? 'Prepare' : idx === recipe.steps.length - 1 ? 'Finish' : 'Cook'}</span>{step}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
+                  </div>
+
+                  <p className="text-xs text-amber-800/90 mb-3 leading-relaxed">
+                    Here is the exact shortfall for each required item before you start cooking:
+                  </p>
+
+                  <div className="space-y-2">
+                    {availability.missingIngredients.map((ing, idx) => (
+                      <div
+                        key={idx}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/95 rounded-xl p-3 border border-amber-200/80 shadow-xs"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <div>
+                            <span className="text-sm font-bold text-slate-900">{ing.name}</span>
+                            <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                              <span>Have in Pantry: <strong className="text-slate-700">{ing.available} {ing.unit}</strong></span>
+                              <span>&bull;</span>
+                              <span>Recipe Needs: <strong className="text-slate-700">{ing.required} {ing.unit}</strong></span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                          <span className="text-xs font-extrabold text-amber-900 bg-amber-100 border border-amber-300/80 px-2.5 py-1 rounded-xl">
+                            Need +{ing.missing} {ing.unit} more
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <ol className="space-y-2.5">
+                {recipe.steps.map((step, idx) => {
+                  const isChecked = completedSteps[idx];
+                  return (
+                    <li
+                      key={idx}
+                      onClick={() => toggleStep(idx)}
+                      className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
+                        isChecked
+                          ? 'bg-slate-100/80 border-slate-200 text-slate-400 line-through'
+                          : 'bg-white border-slate-100 hover:border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      <span className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${
+                        isChecked
+                          ? 'bg-slate-300 text-white'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <span className="text-sm leading-relaxed pt-0.5">
+                        <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700/70 mb-0.5">
+                          {idx === 0 ? 'Prepare' : idx === recipe.steps.length - 1 ? 'Finish' : 'Cook'}
+                        </span>
+                        {step}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
+
+          {/* Tab 2: Ingredients Checklist */}
+          {(activeTab === 'ingredients' || activeTab === 'all') && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                  <UtensilsCrossed className="w-4 h-4 text-[#287A52]" />
+                  <span>Ingredients ({recipe.ingredients.length})</span>
+                </h3>
+                <span className="text-xs text-slate-400">
+                  Pantry inventory check
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {availability?.ingredientStatuses?.map((ing, idx) => {
+                  const isAvailable = ing.is_available;
+                  const shortfall = Math.max(0, (ing.quantity_required || 0) - (ing.available_in_pantry || 0));
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                        isAvailable
+                          ? 'bg-emerald-50/40 border-emerald-200/80 text-slate-800'
+                          : 'bg-amber-50/60 border-amber-200/90 text-amber-950'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                          isAvailable ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                        }`}>
+                          {isAvailable ? <Check className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                        </div>
+                        <div>
+                          <span className="text-sm font-bold">{ing.name}</span>
+                          <div className="text-xs text-slate-500">
+                            Required: <strong className="text-slate-700">{ing.quantity_required} {ing.unit}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right flex flex-col items-end gap-0.5">
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                          isAvailable
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-900 border border-amber-200'
+                        }`}>
+                          {isAvailable
+                            ? `In Stock: ${ing.available_in_pantry} ${ing.unit}`
+                            : `Need +${shortfall} ${ing.unit} more`}
+                        </span>
+                        {!isAvailable && (
+                          <span className="text-[10px] text-slate-500">
+                            In pantry: {ing.available_in_pantry} {ing.unit}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         </div>
 

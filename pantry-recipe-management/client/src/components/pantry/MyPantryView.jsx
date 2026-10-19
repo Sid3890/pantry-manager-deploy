@@ -32,7 +32,8 @@ export const MyPantryView = ({ onNavigateToCook }) => {
     addItem, 
     updateItem, 
     updateQuantity, 
-    removeItem 
+    removeItem,
+    clearPantry 
   } = usePantry();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -120,8 +121,23 @@ export const MyPantryView = ({ onNavigateToCook }) => {
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#287A52] hover:bg-[#1f6342] text-white text-sm font-bold shadow-md shadow-[#287A52]/20 active:scale-[0.98] transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Add Pantry Item</span>
+            <span>Add Pantry Item</span>
           </button>
+
+          {pantryItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Are you sure you want to clear all ${pantryItems.length} items from your pantry? This cannot be undone.`)) {
+                  clearPantry();
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-white border border-rose-200 hover:bg-rose-50 hover:border-rose-300 text-[#D9534F] text-xs font-bold active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Pantry</span>
+            </button>
+          )}
         </div>
       </div>
 
