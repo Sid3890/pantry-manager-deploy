@@ -24,7 +24,6 @@ import {
   listIngredients,
   listRecipes,
   getCookingHistory,
-  recordPurchase,
   removePantryItem,
   updatePantryItem,
   upsertUser,
@@ -131,7 +130,6 @@ export const appRouter = router({
       quantity: z.string().refine(value => Number(value) > 0, "Quantity must be greater than zero"),
       unit: z.string().min(1).max(32),
       expiryDate: dateInput,
-      purchaseId: z.number().int().positive().optional(),
     })).mutation(({ ctx, input }) => addPantryItem({ ...input, userId: ctx.user.id, expiryDate: toDate(input.expiryDate) })),
     update: protectedProcedure.input(z.object({
       itemId: z.number().int().positive(),
@@ -144,17 +142,6 @@ export const appRouter = router({
       markAsWasted: z.boolean().optional(),
     })).mutation(({ ctx, input }) => removePantryItem(ctx.user.id, input.itemId, Boolean(input.markAsWasted))),
     expire: protectedProcedure.input(z.object({ asOf: dateInput }).optional()).mutation(({ ctx, input }) => expirePantry(ctx.user.id, input?.asOf ? new Date(`${input.asOf}T23:59:59.999Z`) : new Date())),
-  }),
-
-  purchases: router({
-    record: protectedProcedure.input(z.object({
-      ingredientId: z.number().int().positive(),
-      supplierName: z.string().max(160).optional(),
-      quantityPurchased: z.string().refine(value => Number(value) > 0, "Purchased quantity must be greater than zero"),
-      unit: z.string().min(1).max(32),
-      totalPrice: z.string().refine(value => Number(value) >= 0, "Total price cannot be negative"),
-      expiryDate: dateInput,
-    })).mutation(({ ctx, input }) => recordPurchase({ ...input, userId: ctx.user.id, expiryDate: toDate(input.expiryDate) })),
   }),
 
   recipes: router({

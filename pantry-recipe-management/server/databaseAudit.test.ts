@@ -69,30 +69,18 @@ describe("Database Audit & Dietary Logic Verification", () => {
     }
   });
 
-  it("verifies purchase record supports optional plain text supplier_name without suppliers table", () => {
-    const samplePurchase = {
-      purchaseId: 1,
+  it("verifies pantry items are created directly without purchase dependencies", () => {
+    const directPantryItem = {
+      itemId: 101,
       userId: 1,
       ingredientId: 5,
-      quantityPurchased: "3.000",
+      quantity: "3.000",
       unit: "piece",
-      totalPrice: "4.50",
-      supplierName: "Local Farmers Market",
+      expiryDate: "2026-11-15",
     };
 
-    expect(samplePurchase.supplierName).toBe("Local Farmers Market");
-    expect("supId" in samplePurchase).toBe(false);
-
-    // Purchase without supplierName is also valid
-    const purchaseWithoutSupplier = {
-      purchaseId: 2,
-      userId: 1,
-      ingredientId: 6,
-      quantityPurchased: "1.000",
-      unit: "g",
-      totalPrice: "3.00",
-      supplierName: undefined,
-    };
-    expect(purchaseWithoutSupplier.supplierName).toBeUndefined();
+    expect(directPantryItem.itemId).toBe(101);
+    expect(directPantryItem.quantity).toBe("3.000");
+    expect("purchaseId" in directPantryItem).toBe(false);
   });
 });

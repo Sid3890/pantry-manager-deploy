@@ -27,9 +27,9 @@ A culinary management application built with **React**, **Vite**, **Tailwind CSS
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                       DATABASE                              │
-│  - 10 normalized relational entities:                       │
+│  - 9 normalized relational entities:                       │
 │    users, categories, ingredients, pantry_items, │
-│    purchase_log, recipes, recipe_ingredients, cooking_log,  │
+│    recipes, recipe_ingredients, cooking_log,  │
 │    dietary_tags, waste_log                                  │
 │  - Oracle deployment scripts: database/oracle/*.sql         │
 └─────────────────────────────────────────────────────────────┘

@@ -2,10 +2,10 @@
 -- PantryWise Supabase PostgreSQL Row-Level Security (RLS) Policy Setup
 -- ====================================================================
 -- Purpose:
--- 1. Enforces Row-Level Security across all 10 application tables.
+-- 1. Enforces Row-Level Security across all 9 application tables.
 -- 2. Restricts direct Supabase PostgREST (anon / authenticated) access.
 -- 3. Grants read-only access on shared catalogue data (recipes, ingredients, categories).
--- 4. Enforces default-deny on all private user tables (users, pantry_items, purchase_log, cooking_log, waste_log).
+-- 4. Enforces default-deny on all private user tables (users, pantry_items, cooking_log, waste_log).
 -- Note: The Node.js / Express backend connects as table owner (postgres), which bypasses RLS
 -- and performs its own application-level authentication and query isolation.
 -- ====================================================================
@@ -15,7 +15,6 @@
 -- --------------------------------------------------------------------
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pantry_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE purchase_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cooking_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE waste_log ENABLE ROW LEVEL SECURITY;
 
@@ -36,7 +35,6 @@ DROP POLICY IF EXISTS "dietary_tags_read_policy" ON dietary_tags;
 
 DROP POLICY IF EXISTS "users_deny_anon_access" ON users;
 DROP POLICY IF EXISTS "pantry_items_deny_anon_access" ON pantry_items;
-DROP POLICY IF EXISTS "purchase_log_deny_anon_access" ON purchase_log;
 DROP POLICY IF EXISTS "cooking_log_deny_anon_access" ON cooking_log;
 DROP POLICY IF EXISTS "waste_log_deny_anon_access" ON waste_log;
 

@@ -8,7 +8,6 @@ import {
   ingredients,
   InsertUser,
   pantryItems,
-  purchaseLog,
   recipeIngredients,
   recipes,
   users,
@@ -206,7 +205,6 @@ export async function getPantry(userId: number) {
       ingredientId: pantryItems.ingredientId,
       ingredientName: ingredients.name,
       defaultUnit: ingredients.defaultUnit,
-      purchaseId: pantryItems.purchaseId,
       quantity: pantryItems.quantity,
       unit: pantryItems.unit,
       expiryDate: pantryItems.expiryDate,
@@ -247,7 +245,6 @@ export async function addPantryItem(input: {
   quantity: string;
   unit: string;
   expiryDate?: Date;
-  purchaseId?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database is not configured");
@@ -259,7 +256,6 @@ export async function addPantryItem(input: {
       quantity: input.quantity,
       unit: input.unit,
       expiryDate: input.expiryDate ? input.expiryDate.toISOString().slice(0, 10) : undefined,
-      purchaseId: input.purchaseId,
     })
     .returning({ itemId: pantryItems.itemId });
   return Number(result[0].itemId);
@@ -310,41 +306,6 @@ export async function removePantryItem(userId: number, itemId: number, markAsWas
   });
 }
 
-export async function recordPurchase(input: {
-  userId: number;
-  ingredientId: number;
-  supplierName?: string;
-  quantityPurchased: string;
-  unit: string;
-  totalPrice: string;
-  expiryDate?: Date;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database is not configured");
-  return db.transaction(async tx => {
-    const purchase = await tx
-      .insert(purchaseLog)
-      .values({
-        userId: input.userId,
-        ingredientId: input.ingredientId,
-        supplierName: input.supplierName,
-        quantityPurchased: input.quantityPurchased,
-        unit: input.unit,
-        totalPrice: input.totalPrice,
-      })
-      .returning({ purchaseId: purchaseLog.purchaseId });
-    const purchaseId = Number(purchase[0].purchaseId);
-    await tx.insert(pantryItems).values({
-      userId: input.userId,
-      ingredientId: input.ingredientId,
-      purchaseId,
-      quantity: input.quantityPurchased,
-      unit: input.unit,
-      expiryDate: input.expiryDate ? input.expiryDate.toISOString().slice(0, 10) : undefined,
-    });
-    return { purchaseId };
-  });
-}
 
 export type RecipeDetails = {
   recipeId: number;
@@ -712,7 +673,6 @@ export async function syncDatabaseSequences(): Promise<void> {
       SELECT setval(pg_get_serial_sequence('recipes', 'recipe_id'), COALESCE((SELECT MAX(recipe_id) FROM recipes), 1));
       SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1));
       SELECT setval(pg_get_serial_sequence('pantry_items', 'item_id'), COALESCE((SELECT MAX(item_id) FROM pantry_items), 1));
-      SELECT setval(pg_get_serial_sequence('purchase_log', 'purchase_id'), COALESCE((SELECT MAX(purchase_id) FROM purchase_log), 1));
       SELECT setval(pg_get_serial_sequence('recipe_ingredients', 'ri_id'), COALESCE((SELECT MAX(ri_id) FROM recipe_ingredients), 1));
       SELECT setval(pg_get_serial_sequence('cooking_log', 'cook_id'), COALESCE((SELECT MAX(cook_id) FROM cooking_log), 1));
       SELECT setval(pg_get_serial_sequence('dietary_tags', 'tag_id'), COALESCE((SELECT MAX(tag_id) FROM dietary_tags), 1));
