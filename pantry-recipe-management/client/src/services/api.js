@@ -489,10 +489,52 @@ export const api = {
         const webInvalid = backendRecommend.webInvalid || [];
         for (const wi of webInvalid) {
           const c = wi.candidate || wi;
-          const missingNames = wi.missing || [];
-          const totalIng = c.ingredients?.length || 1;
+          const rawMissing = wi.missing || [];
+          const missingNames = rawMissing.map(m => String(m).toLowerCase().trim());
+          const rawIngredients = c.ingredients || [];
+          const totalIng = rawIngredients.length || 1;
           const missingCount = missingNames.length;
-          const pct = Math.round(((totalIng - missingCount) / totalIng) * 100);
+          const pct = Math.max(0, Math.round(((totalIng - missingCount) / totalIng) * 100));
+
+          const ingredientStatuses = rawIngredients.map(ing => {
+            const ingNameLower = String(ing.name || '').toLowerCase().trim();
+            const isMissing = missingNames.some(m => m === ingNameLower || ingNameLower.includes(m) || m.includes(ingNameLower));
+            const qtyReq = Number(ing.quantity ?? 1);
+            return {
+              name: ing.name,
+              quantity_required: qtyReq,
+              unit: ing.unit || 'piece',
+              available_in_pantry: isMissing ? 0 : qtyReq,
+              is_available: !isMissing,
+              status: isMissing ? 'missing' : 'available',
+            };
+          });
+
+          const missingIngredients = rawIngredients
+            .filter(ing => {
+              const ingNameLower = String(ing.name || '').toLowerCase().trim();
+              return missingNames.some(m => m === ingNameLower || ingNameLower.includes(m) || m.includes(ingNameLower));
+            })
+            .map(ing => ({
+              name: ing.name,
+              missing: Number(ing.quantity ?? 1),
+              unit: ing.unit || 'piece',
+              available: 0,
+              required: Number(ing.quantity ?? 1),
+            }));
+
+          if (missingIngredients.length === 0 && rawMissing.length > 0) {
+            rawMissing.forEach(n => {
+              missingIngredients.push({
+                name: String(n),
+                missing: 1,
+                unit: 'piece',
+                available: 0,
+                required: 1,
+              });
+            });
+          }
+
           allCandidates.push({
             recipe_id: `web-partial-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             name: c.name,
@@ -507,19 +549,13 @@ export const api = {
             reviews_count: 0,
             dietary_tags: c.dietaryTags || [],
             steps: c.steps ? (typeof c.steps === 'string' ? c.steps.split('\n') : c.steps) : ['Follow recipe instructions.'],
-            ingredients: (c.ingredients || []).map(ing => ({
-              name: ing.name,
-              quantity_required: Number(ing.quantity ?? 1),
-              unit: ing.unit,
-              is_available: !missingNames.includes(ing.name),
-              status: missingNames.includes(ing.name) ? 'missing' : 'available',
-            })),
+            ingredients: ingredientStatuses,
             availability: {
               percentage: pct,
               tier: pct >= 75 ? 'almost' : 'low',
               isFullyAvailable: false,
-              missingIngredients: missingNames.map(n => ({ name: n })),
-              ingredientStatuses: [],
+              missingIngredients,
+              ingredientStatuses,
             },
           });
         }

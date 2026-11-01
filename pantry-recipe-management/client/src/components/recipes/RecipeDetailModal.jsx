@@ -13,6 +13,26 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
   const isReady = availability?.isFullyAvailable || availability?.percentage === 100;
   const isAiFallback = recipe.source === 'WEB_RETRIEVED';
 
+  // Compute robust list of ingredients, checking availability.ingredientStatuses, then falling back to recipe.ingredients
+  const ingredientList = (availability?.ingredientStatuses && availability.ingredientStatuses.length > 0)
+    ? availability.ingredientStatuses
+    : (recipe.ingredients || []).map(ing => {
+        const missingMatch = availability?.missingIngredients?.find(
+          m => m.name && ing.name && m.name.toLowerCase().trim() === ing.name.toLowerCase().trim()
+        );
+        const isAvail = ing.is_available ?? (!missingMatch);
+        const qtyReq = Number(ing.quantity_required ?? ing.quantityRequired ?? ing.quantity ?? 1);
+        const availQty = ing.available_in_pantry ?? (missingMatch ? (missingMatch.available ?? 0) : (isAvail ? qtyReq : 0));
+        return {
+          name: ing.name || ing.ingredientName,
+          quantity_required: qtyReq,
+          unit: ing.unit || 'piece',
+          available_in_pantry: availQty,
+          is_available: isAvail,
+          status: ing.status || (isAvail ? 'available' : 'missing'),
+        };
+      });
+
   const toggleStep = (index) => {
     setCompletedSteps(prev => ({
       ...prev,
@@ -199,16 +219,16 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
                           <div>
                             <span className="text-sm font-bold text-slate-900">{ing.name}</span>
                             <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                              <span>Have in Pantry: <strong className="text-slate-700">{ing.available} {ing.unit}</strong></span>
+                              <span>Have in Pantry: <strong className="text-slate-700">{ing.available ?? 0} {ing.unit || 'piece'}</strong></span>
                               <span>&bull;</span>
-                              <span>Recipe Needs: <strong className="text-slate-700">{ing.required} {ing.unit}</strong></span>
+                              <span>Recipe Needs: <strong className="text-slate-700">{ing.required ?? 1} {ing.unit || 'piece'}</strong></span>
                             </div>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                           <span className="text-xs font-extrabold text-amber-900 bg-amber-100 border border-amber-300/80 px-2.5 py-1 rounded-xl">
-                            Need +{ing.missing} {ing.unit} more
+                            Need +{ing.missing ?? 1} {ing.unit || 'piece'} more
                           </span>
                         </div>
                       </div>
@@ -256,7 +276,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
                   <UtensilsCrossed className="w-4 h-4 text-[#287A52]" />
-                  <span>Ingredients ({recipe.ingredients.length})</span>
+                  <span>Ingredients ({ingredientList.length || recipe.ingredients?.length || 0})</span>
                 </h3>
                 <span className="text-xs text-slate-400">
                   Pantry inventory check
@@ -264,7 +284,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
               </div>
 
               <div className="space-y-2">
-                {availability?.ingredientStatuses?.map((ing, idx) => {
+                {ingredientList.map((ing, idx) => {
                   const isAvailable = ing.is_available;
                   const shortfall = Math.max(0, (ing.quantity_required || 0) - (ing.available_in_pantry || 0));
                   return (
