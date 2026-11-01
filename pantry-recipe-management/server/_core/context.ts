@@ -16,20 +16,8 @@ export async function createContext(
   try {
     user = await sdk.authenticateRequest(opts.req);
   } catch (error) {
-    // If not authenticated, provide a default demo user so all features and procedures work seamlessly
-    user = {
-      id: 1,
-      openId: "demo-user",
-      name: "Alex Chef",
-      email: "demo@pantrymanager.local",
-      passwordHash: null,
-      loginMethod: "demo",
-      role: "admin",
-      cookingLevel: "BEGINNER",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      lastSignedIn: new Date(),
-    };
+    // Authentication is optional for public procedures; protected procedures reject user = null
+    user = null;
   }
 
   return {

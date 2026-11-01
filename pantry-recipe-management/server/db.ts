@@ -305,7 +305,7 @@ export async function removePantryItem(userId: number, itemId: number, markAsWas
         expiredOn: existing[0].expiryDate ?? new Date().toISOString().slice(0, 10),
       });
     }
-    await tx.delete(pantryItems).where(eq(pantryItems.itemId, itemId));
+    await tx.delete(pantryItems).where(and(eq(pantryItems.itemId, itemId), eq(pantryItems.userId, userId)));
     return { success: true } as const;
   });
 }
@@ -589,8 +589,8 @@ export async function cookRecipe(userId: number, recipeId: number) {
         const current = Number(row.quantity);
         const deduction = Math.min(current, remaining);
         const next = current - deduction;
-        if (next <= 0.000001) await tx.delete(pantryItems).where(eq(pantryItems.itemId, row.itemId));
-        else await tx.update(pantryItems).set({ quantity: next.toFixed(3) }).where(eq(pantryItems.itemId, row.itemId));
+        if (next <= 0.000001) await tx.delete(pantryItems).where(and(eq(pantryItems.itemId, row.itemId), eq(pantryItems.userId, userId)));
+        else await tx.update(pantryItems).set({ quantity: next.toFixed(3) }).where(and(eq(pantryItems.itemId, row.itemId), eq(pantryItems.userId, userId)));
         remaining -= deduction;
       }
     }
@@ -622,7 +622,7 @@ export async function expirePantry(userId: number, asOf = new Date()) {
         unit: row.unit,
         expiredOn: row.expiryDate ?? expiryDateStr,
       });
-      await tx.delete(pantryItems).where(eq(pantryItems.itemId, row.itemId));
+      await tx.delete(pantryItems).where(and(eq(pantryItems.itemId, row.itemId), eq(pantryItems.userId, userId)));
     }
     return { expiredCount: expired.length };
   });
