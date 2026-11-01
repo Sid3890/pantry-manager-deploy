@@ -436,10 +436,11 @@ export const api = {
           });
         }
 
-        // Normalize web-retrieved valid candidates
+        // Normalize web-retrieved and AI-generated valid candidates
         const webCandidates = backendRecommend.webCandidates || [];
         for (const wc of webCandidates) {
           const c = wc.candidate || wc;
+          const isAiGenerated = c.url && String(c.url).startsWith('ai-recipe://');
           const avail = {
             percentage: 100,
             tier: 'ready',
@@ -453,17 +454,23 @@ export const api = {
               status: 'available',
             })),
           };
+          // For AI recipes: use the ai-recipe:// URL as the recipe_id so cookRecipe knows it's AI
+          const recipeIdStr = isAiGenerated
+            ? (c.url || `ai-recipe://${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
+            : `web-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           allCandidates.push({
-            recipe_id: `web-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            recipe_id: recipeIdStr,
             name: c.name,
-            tagline: `Cook time: ${c.cookTimeMin} mins • Web Retrieved`,
+            tagline: isAiGenerated
+              ? `Cook time: ${c.cookTimeMin} mins • AI Generated`
+              : `Cook time: ${c.cookTimeMin} mins • Web Retrieved`,
             cook_time_min: c.cookTimeMin ?? 20,
-            difficulty_level: c.difficultyLevel ?? 'INTERMEDIATE',
+            difficulty_level: c.difficultyLevel ?? 'BEGINNER',
             utensil_count: 2,
-            source: 'WEB_RETRIEVED',
-            source_attribution: c.url ? `Retrieved from ${new URL(c.url).hostname}` : 'Web Recipe',
-            source_url: c.url,
-            rating: Number(c.rating || 4.3),
+            source: isAiGenerated ? 'AI_GENERATED' : 'WEB_RETRIEVED',
+            source_attribution: isAiGenerated ? 'AI Generated Recipe' : (c.url && !String(c.url).startsWith('ai-recipe://') ? `Retrieved from ${new URL(c.url).hostname}` : 'Web Recipe'),
+            source_url: isAiGenerated ? undefined : c.url,
+            rating: Number(c.rating || (isAiGenerated ? 4.8 : 4.3)),
             reviews_count: 0,
             dietary_tags: c.dietaryTags || [],
             steps: c.steps ? (typeof c.steps === 'string' ? c.steps.split('\n') : c.steps) : ['Follow recipe instructions.'],
@@ -588,9 +595,38 @@ export const api = {
 
       // Attempt backend procedure call
       if (typeof recipeId === 'number') {
+        // DB recipe — call the standard cook endpoint
         const backendCook = await callTrpc('recipes.cook', { recipeId: Number(recipeId) }, 'mutation');
         if (backendCook && backendCook.success === false) {
           throw new Error(backendCook.missing ? backendCook.missing.join(', ') : 'Cannot cook recipe: ingredients insufficient in database.');
+        }
+      } else {
+        // AI or web-retrieved recipe (string id like "web-..." or "ai-recipe://...")
+        // Persist the recipe to DB and deduct pantry stock via the cookFromWeb endpoint
+        const stepsStr = Array.isArray(recipe.steps) ? recipe.steps.join('\n') : (recipe.steps || 'Follow recipe instructions.');
+        const ingredients = (recipe.ingredients || []).map(ing => ({
+          name: String(ing.name || '').trim(),
+          quantity: Number(ing.quantity_required ?? ing.quantityRequired ?? 1),
+          unit: String(ing.unit || 'piece').trim(),
+        })).filter(ing => ing.name.length > 0 && ing.quantity > 0);
+
+        if (ingredients.length > 0) {
+          const isAiRecipe = String(recipeId).startsWith('ai-recipe://');
+          const backendCook = await callTrpc('recipes.cookFromWeb', {
+            name: recipe.name,
+            steps: stepsStr,
+            cookTimeMin: Number(recipe.cook_time_min ?? recipe.cookTimeMin ?? 15),
+            difficultyLevel: (recipe.difficulty_level || recipe.difficultyLevel || 'BEGINNER'),
+            source: 'WEB_RETRIEVED',
+            sourceUrl: isAiRecipe ? undefined : (recipe.source_url || undefined),
+            rating: recipe.rating ? String(recipe.rating) : undefined,
+            dietaryTags: recipe.dietary_tags || recipe.dietaryTags || [],
+            ingredients,
+          }, 'mutation');
+
+          if (backendCook && backendCook.success === false) {
+            throw new Error(backendCook.missing ? backendCook.missing.join(', ') : 'Cannot cook recipe: ingredients insufficient in database.');
+          }
         }
       }
 

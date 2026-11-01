@@ -15,6 +15,7 @@ import {
   getDashboard,
   getPantry,
   getPantrySnapshot,
+  getOrCreateIngredient,
   getRecipeDetails,
   getUserByEmail,
   getUserByOpenId,
@@ -29,7 +30,7 @@ import {
   updatePantryItem,
   upsertUser,
 } from "./db";
-import { recommendFromWeb } from "./recipePipeline";
+import { recommendFromWeb, generateRecipesWithAI } from "./recipePipeline";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
 const difficulty = z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]);
@@ -186,7 +187,19 @@ export const appRouter = router({
         quantity: z.union([z.string(), z.number()]).transform(v => String(v)),
       })).optional(),
     })).mutation(async ({ ctx, input }) => {
-      const stored = await findStoredRecipeCandidates(ctx.user.id, { maxTime: input.maxTime, difficulty: input.cookingLevel });
+      // Build pantry: DB first, fall back to client-submitted pantryItems
+      const dbPantryEarly = await getPantrySnapshot(ctx.user.id);
+      const pantry = dbPantryEarly.length > 0
+        ? dbPantryEarly
+        : (input.pantryItems?.map((p, idx) => ({
+            ingredientId: p.ingredientId ?? (idx + 1),
+            ingredientName: p.ingredientName,
+            unit: p.unit,
+            quantity: p.quantity,
+            nearestExpiry: null,
+          })) ?? []);
+
+      const stored = await findStoredRecipeCandidates(ctx.user.id, { maxTime: input.maxTime, difficulty: input.cookingLevel }, pantry);
       const excludeIds = new Set(input.excludeRecipeIds ?? []);
 
       // If user has excluded recipes from prior views, filter; if all would be filtered out, keep all
@@ -212,17 +225,7 @@ export const appRouter = router({
         return { source: "DATABASE" as const, candidates: dbCandidates, storedRecipeId: null };
       }
 
-      // Otherwise, supplement with web-retrieved recipes
-      const dbPantry = await getPantrySnapshot(ctx.user.id);
-      const pantry = dbPantry.length > 0 ? dbPantry : (input.pantryItems?.map((p, idx) => ({
-        ingredientId: p.ingredientId ?? (idx + 1),
-        ingredientName: p.ingredientName,
-        unit: p.unit,
-        quantity: p.quantity,
-        nearestExpiry: null,
-      })) ?? []);
-
-      // Skip web search if pantry is empty — no point searching
+      // Skip web+AI search if pantry is empty
       if (pantry.length === 0) {
         return { source: "DATABASE" as const, candidates: dbCandidates, storedRecipeId: null };
       }
@@ -237,7 +240,7 @@ export const appRouter = router({
         excludeUrls: [...(input.excludeUrls ?? []), ...existingUrls],
       });
 
-      // Merge DB + web candidates into unified response
+      // Merge DB + web/AI candidates into unified response
       return {
         source: "MIXED" as const,
         candidates: dbCandidates,
@@ -247,6 +250,52 @@ export const appRouter = router({
       };
     }),
     cook: protectedProcedure.input(z.object({ recipeId: z.number().int().positive() })).mutation(({ ctx, input }) => cookRecipe(ctx.user.id, input.recipeId)),
+
+    // cookFromWeb: Called when a user cooks an AI-generated or web-retrieved recipe (no DB id yet).
+    // It first persists the recipe to the database, then deducts pantry stock.
+    cookFromWeb: protectedProcedure.input(z.object({
+      name: z.string().min(2).max(240),
+      steps: z.string().min(1),
+      cookTimeMin: z.number().int().positive(),
+      difficultyLevel: difficulty,
+      source: z.enum(["MANUAL", "WEB_RETRIEVED"]).default("WEB_RETRIEVED"),
+      sourceUrl: z.string().optional(),
+      rating: z.string().optional(),
+      dietaryTags: z.array(z.string().min(1).max(100)).max(20).optional(),
+      ingredients: z.array(z.object({
+        name: z.string().min(1).max(200),
+        quantity: z.number().positive(),
+        unit: z.string().min(1).max(32),
+      })).min(1),
+    })).mutation(async ({ ctx, input }) => {
+      // 1. Resolve or create each ingredient in the DB
+      const ingredientRows: Array<{ ingredientId: number; quantityRequired: string; unit: string }> = [];
+      for (const ing of input.ingredients) {
+        const dbIng = await getOrCreateIngredient(ing.name, ing.unit);
+        ingredientRows.push({
+          ingredientId: dbIng.ingredientId,
+          quantityRequired: ing.quantity.toFixed(3),
+          unit: ing.unit,
+        });
+      }
+
+      // 2. Persist recipe to DB (deduplicates on sourceUrl if provided)
+      const recipeId = await createRecipe({
+        name: input.name,
+        steps: input.steps,
+        cookTimeMin: input.cookTimeMin,
+        difficultyLevel: input.difficultyLevel,
+        utensilCount: 0,
+        source: input.source,
+        sourceUrl: input.sourceUrl,
+        rating: input.rating,
+        ingredients: ingredientRows,
+        dietaryTags: input.dietaryTags,
+      });
+
+      // 3. Deduct pantry stock (same as regular cookRecipe)
+      return cookRecipe(ctx.user.id, recipeId);
+    }),
   }),
 
   cooking: router({

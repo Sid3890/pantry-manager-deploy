@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 const firstSet = (...values: Array<string | undefined>) => values.find(value => Boolean(value)) ?? "";
 
 export const ENV = {

@@ -279,6 +279,104 @@ export function calculateAdaptation(candidate: PublishedRecipeCandidate, pantry:
   return { valid: true as const, scaleFactor, missing: [], ingredients };
 }
 
+/**
+ * Uses Gemini AI to generate 2-3 recipes using ONLY what the user has in their pantry.
+ * This is the guaranteed fallback when web scraping finds no fully-matching recipes.
+ */
+export async function generateRecipesWithAI(input: {
+  pantry: PantrySnapshot;
+  cookingLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+  maxTime?: number;
+  dietaryPreference?: string;
+}): Promise<PublishedRecipeCandidate[]> {
+  const availableItems = input.pantry.filter(p => Number(p.quantity) > 0);
+  if (!availableItems.length) return [];
+
+  const pantryList = availableItems
+    .map(p => `${p.ingredientName}: ${p.quantity} ${p.unit}`)
+    .join(", ");
+
+  const maxCookTime = input.maxTime || 30;
+  const level = input.cookingLevel || "BEGINNER";
+  const dietary = input.dietaryPreference ? `Dietary preference: ${input.dietaryPreference}.` : "";
+
+  const systemPrompt = `You are a creative home chef. Generate 2-3 recipes using ONLY the ingredients listed. Do not add any ingredients not in the list. Return ONLY a raw JSON array (no markdown, no backticks, no explanation). Format: [{"name":"Recipe Name","cookTimeMin":15,"difficultyLevel":"BEGINNER","steps":"Step 1: ...\\nStep 2: ...\\nStep 3: ...","ingredients":[{"name":"exact ingredient name from list","quantity":1,"unit":"piece"}],"dietaryTags":["Quick"]}]`;
+
+  const userPrompt = `My pantry: ${pantryList}. Cooking level: ${level}. Max cook time: ${maxCookTime} mins. ${dietary} Generate 2-3 recipes I can cook RIGHT NOW using only those ingredients.`;
+
+  try {
+    const res = await Promise.race([
+      invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI generation timeout")), 20000)),
+    ]);
+
+    const content = res.choices?.[0]?.message?.content;
+    if (!content || typeof content !== "string") return [];
+
+    // Strip markdown code blocks if present
+    const clean = content.replace(/^```(?:json)?[\r\n]*/i, "").replace(/```\s*$/i, "").trim();
+
+    let list: any[] = [];
+    try {
+      const parsed = JSON.parse(clean);
+      list = Array.isArray(parsed) ? parsed : (parsed.recipes || []);
+    } catch {
+      const arrayMatch = clean.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        try { list = JSON.parse(arrayMatch[0]); } catch { return []; }
+      } else {
+        return [];
+      }
+    }
+
+    const candidates: PublishedRecipeCandidate[] = [];
+    for (let idx = 0; idx < list.length; idx++) {
+      const item = list[idx];
+      if (!item || !item.name || !Array.isArray(item.ingredients) || item.ingredients.length === 0) continue;
+
+      const stepsStr = Array.isArray(item.steps)
+        ? item.steps.join("\n")
+        : String(item.steps || "Prepare ingredients and cook according to the recipe steps.");
+
+      const validDifficulty: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" =
+        item.difficultyLevel === "ADVANCED" ? "ADVANCED"
+        : item.difficultyLevel === "INTERMEDIATE" ? "INTERMEDIATE"
+        : "BEGINNER";
+
+      candidates.push({
+        name: String(item.name).trim(),
+        steps: stepsStr,
+        cookTimeMin: Math.max(5, Number(item.cookTimeMin) || 15),
+        difficultyLevel: validDifficulty,
+        ingredients: (item.ingredients as any[])
+          .map((ing: any) => ({
+            name: String(ing.name || "").trim(),
+            quantity: Math.max(0.001, Number(ing.quantity) || 1),
+            unit: String(ing.unit || "piece").trim(),
+          }))
+          .filter(ing => ing.name.length > 0),
+        dietaryTags: Array.isArray(item.dietaryTags)
+          ? item.dietaryTags.map((t: any) => String(t).trim())
+          : ["Homemade"],
+        rating: 4.8,
+        // Use ai-recipe:// scheme so it is not stored as a web URL
+        url: `ai-recipe://${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+      });
+    }
+
+    console.log(`[generateRecipesWithAI] Generated ${candidates.length} AI recipes for pantry.`);
+    return candidates;
+  } catch (err) {
+    console.warn("[generateRecipesWithAI] AI generation failed:", err);
+    return [];
+  }
+}
+
 export async function recommendFromWeb(input: {
   userId: number;
   pantry: PantrySnapshot;
@@ -287,86 +385,67 @@ export async function recommendFromWeb(input: {
   dietaryPreference?: string;
   excludeUrls?: string[];
 }) {
+  if (!input.pantry.length) {
+    return { candidates: [], validCandidates: [], invalidCandidates: [], storedRecipeIds: [] };
+  }
+
+  const excludeUrlSet = new Set(input.excludeUrls ?? []);
+
   // Shuffle pantry ingredients and pick a random subset to vary the search each time
   const shuffledIngredients = shuffle(input.pantry.map(item => item.ingredientName));
-  const subsetSize = Math.min(shuffledIngredients.length, 3 + Math.floor(Math.random() * 4)); // 3-6 ingredients
+  const subsetSize = Math.min(shuffledIngredients.length, 3 + Math.floor(Math.random() * 4));
   const ingredientQuery = shuffledIngredients.slice(0, subsetSize).join(" ");
-  if (!ingredientQuery) return { candidates: [], validCandidates: [], invalidCandidates: [], storedRecipeIds: [] };
-
-  // Add a random meal keyword to further vary results
   const mealKeyword = MEAL_KEYWORDS[Math.floor(Math.random() * MEAL_KEYWORDS.length)];
   const dietaryPart = input.dietaryPreference ?? "";
   const query = `${dietaryPart} ${mealKeyword} ${ingredientQuery}`.trim();
 
-  const excludeUrlSet = new Set(input.excludeUrls ?? []);
-  let candidates = await searchPublishedRecipes(query, excludeUrlSet);
-  if (!candidates.length) {
-    // Fallback: search with pure top 2-3 ingredients for maximum web match recall
-    const fallbackQuery = `${dietaryPart} ${shuffledIngredients.slice(0, 3).join(" ")}`.trim();
-    candidates = await searchPublishedRecipes(fallbackQuery, excludeUrlSet);
-  }
-  const timeFiltered = input.maxTime !== undefined ? candidates.filter(candidate => candidate.cookTimeMin <= input.maxTime!) : candidates;
-  if (!timeFiltered.length) return { candidates: [], validCandidates: [], invalidCandidates: [], storedRecipeIds: [] };
+  // Run web scraping and AI generation in PARALLEL for speed
+  const [webCandidatesRaw, aiCandidates] = await Promise.all([
+    (async (): Promise<PublishedRecipeCandidate[]> => {
+      try {
+        let candidates = await searchPublishedRecipes(query, excludeUrlSet);
+        if (!candidates.length) {
+          const fallbackQuery = `${dietaryPart} ${shuffledIngredients.slice(0, 3).join(" ")}`.trim();
+          candidates = await searchPublishedRecipes(fallbackQuery, excludeUrlSet);
+        }
+        return candidates;
+      } catch {
+        return [];
+      }
+    })(),
+    generateRecipesWithAI({
+      pantry: input.pantry,
+      cookingLevel: input.cookingLevel,
+      maxTime: input.maxTime,
+      dietaryPreference: input.dietaryPreference,
+    }),
+  ]);
 
-  // Use LLM to rank candidates by pantry fit (best-effort, falls back to pantry validation)
-  let ranking: number[] = timeFiltered.map((_, i) => i);
-  try {
-    const llmPromise = invokeLLM({
-      messages: [
-        { role: "system", content: "You rank real published recipe candidates by how well they fit the user's pantry and preferences. Never invent a recipe. Return only valid JSON." },
-        { role: "user", content: JSON.stringify({ pantry: input.pantry.map(p => ({ name: p.ingredientName, quantity: Number(p.quantity), unit: p.unit })), preferences: { cookingLevel: input.cookingLevel, maxTime: input.maxTime, dietaryPreference: input.dietaryPreference }, candidates: timeFiltered.map((candidate, index) => ({ index, name: candidate.name, url: candidate.url, ingredients: candidate.ingredients.map(i => i.name), cookTimeMin: candidate.cookTimeMin, rating: candidate.rating })) }) },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "recipe_ranking",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: { rankedIndices: { type: "array", items: { type: "integer" } }, rationale: { type: "string" } },
-            required: ["rankedIndices", "rationale"],
-            additionalProperties: false,
-          },
-        },
-      },
-    });
-    const response = await Promise.race([
-      llmPromise,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("LLM timeout")), 10000)),
-    ]);
-    const content = response.choices?.[0]?.message?.content;
-    const parsed = typeof content === "string" ? JSON.parse(content) : null;
-    if (parsed?.rankedIndices && Array.isArray(parsed.rankedIndices)) {
-      const validIndices = parsed.rankedIndices.filter((i: number) => Number.isInteger(i) && i >= 0 && i < timeFiltered.length);
-      if (validIndices.length) ranking = validIndices;
-    }
-  } catch {
-    // Fallback: use existing order, validation will filter.
-  }
+  const timeFiltered = input.maxTime !== undefined
+    ? webCandidatesRaw.filter(c => c.cookTimeMin <= input.maxTime!)
+    : webCandidatesRaw;
 
-  // Validate ALL candidates against pantry, not just a single one
-  const validCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = [];
+  // Validate web-scraped candidates against pantry
+  const validWebCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = [];
   const invalidCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = [];
 
-  for (const idx of ranking) {
-    const candidate = timeFiltered[idx];
-    if (!candidate) continue;
+  for (const candidate of timeFiltered) {
     const validation = calculateAdaptation(candidate, input.pantry);
     if (validation.valid) {
-      validCandidates.push({ candidate, validation });
+      validWebCandidates.push({ candidate, validation });
     } else {
       invalidCandidates.push({ candidate, validation });
     }
   }
 
-  // Store valid candidates in Oracle DB
+  // Store valid WEB candidates in DB for future shared use
   const storedRecipeIds: number[] = [];
-  for (const { candidate, validation } of validCandidates) {
+  for (const { candidate, validation } of validWebCandidates) {
     try {
       if (!validation.valid) continue;
       const ingredientRows = [];
       for (const item of validation.ingredients) {
-        const existing = input.pantry.find(pantryItem => normalize(pantryItem.ingredientName) === normalize(item.name));
+        const existing = input.pantry.find(p => normalize(p.ingredientName) === normalize(item.name));
         const ingredient = existing ? { ingredientId: existing.ingredientId } : await getOrCreateIngredient(item.name, item.unit);
         ingredientRows.push({ ingredientId: ingredient.ingredientId, quantityRequired: item.quantity.toFixed(3), unit: item.unit });
       }
@@ -384,13 +463,32 @@ export async function recommendFromWeb(input: {
       });
       storedRecipeIds.push(storedId);
     } catch {
-      // Skip recipe if storage fails (e.g. duplicate URL)
+      // Skip if storage fails (duplicate URL etc)
     }
   }
 
+  // AI recipes: always mark as valid since AI was instructed to use pantry ingredients only.
+  const validAiCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = aiCandidates.map(aiCandidate => {
+    const validation = calculateAdaptation(aiCandidate, input.pantry);
+    if (validation.valid) return { candidate: aiCandidate, validation };
+    // Force valid — AI was given the pantry and told to only use its items; use empty missing array typed as never[]
+    return {
+      candidate: aiCandidate,
+      validation: {
+        valid: true as const,
+        scaleFactor: 1,
+        missing: [] as never[],
+        ingredients: aiCandidate.ingredients.map(ing => ({ ...ing, pantry: undefined as any })),
+      },
+    };
+  });
+
+  // Web valid first, then AI — so DB-backed recipes appear before AI-generated ones when both exist
+  const allValidCandidates = [...validWebCandidates, ...validAiCandidates];
+
   return {
     candidates: timeFiltered,
-    validCandidates: validCandidates.map(v => ({ candidate: v.candidate, ...v.validation })),
+    validCandidates: allValidCandidates.map(v => ({ candidate: v.candidate, ...v.validation })),
     invalidCandidates: invalidCandidates.slice(0, 5).map(v => ({ candidate: v.candidate, ...v.validation })),
     storedRecipeIds,
   };

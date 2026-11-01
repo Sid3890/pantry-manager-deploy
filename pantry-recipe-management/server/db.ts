@@ -452,16 +452,28 @@ export async function createRecipe(input: {
 
 export async function findStoredRecipeCandidates(
   userId: number,
-  filters: { maxTime?: number; difficulty?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"; tag?: string }
+  filters: { maxTime?: number; difficulty?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED"; tag?: string },
+  customPantry?: Array<{ ingredientId?: number; ingredientName: string; unit: string; quantity: string | number; nearestExpiry?: string | null }>
 ) {
   try {
-    const [pantry, recipeList] = await Promise.all([getPantrySnapshot(userId), listRecipes(filters)]);
-    const availableByIngredientId = new Map(
-      pantry.map(item => [`${item.ingredientId}:${item.unit.toLowerCase().trim()}`, Number(item.quantity)])
-    );
-    const availableByName = new Map(
-      pantry.map(item => [`${item.ingredientName.toLowerCase().trim()}:${item.unit.toLowerCase().trim()}`, Number(item.quantity)])
-    );
+    const [pantry, recipeList] = await Promise.all([
+      customPantry && customPantry.length > 0 ? Promise.resolve(customPantry) : getPantrySnapshot(userId),
+      listRecipes(filters),
+    ]);
+
+    // Build lookup maps that check both ingredient id+unit AND name+unit
+    const availableByIngredientId = new Map<string, number>();
+    const availableByName = new Map<string, number>();
+    for (const item of pantry) {
+      const unitKey = (item.unit || "piece").toLowerCase().trim();
+      const qty = Number(item.quantity) || 0;
+      if (item.ingredientId) {
+        const idKey = `${item.ingredientId}:${unitKey}`;
+        availableByIngredientId.set(idKey, (availableByIngredientId.get(idKey) || 0) + qty);
+      }
+      const nameKey = `${item.ingredientName.toLowerCase().trim()}:${unitKey}`;
+      availableByName.set(nameKey, (availableByName.get(nameKey) || 0) + qty);
+    }
 
     return recipeList
       .map(recipe => {
@@ -535,7 +547,7 @@ export async function cookRecipe(userId: number, recipeId: number) {
     const missing: string[] = [];
     for (const item of required) {
       const available = pantry
-        .filter(row => row.ingredientId === item.ingredientId && row.unit === item.unit)
+        .filter(row => (row.ingredientId === item.ingredientId || row.unit.toLowerCase().trim() === item.unit.toLowerCase().trim()))
         .reduce((sum, row) => sum + Number(row.quantity), 0);
       if (available < Number(item.quantityRequired))
         missing.push(`${item.name} requires ${item.quantityRequired} ${item.unit}, available ${available}`);
@@ -544,7 +556,7 @@ export async function cookRecipe(userId: number, recipeId: number) {
 
     for (const item of required) {
       let remaining = Number(item.quantityRequired);
-      const rows = pantry.filter(row => row.ingredientId === item.ingredientId && row.unit === item.unit);
+      const rows = pantry.filter(row => row.ingredientId === item.ingredientId || row.unit.toLowerCase().trim() === item.unit.toLowerCase().trim());
       for (const row of rows) {
         if (remaining <= 0) break;
         const current = Number(row.quantity);
