@@ -304,6 +304,31 @@ export const api = {
       return newItem;
     },
 
+    async updateItem(itemId, updates) {
+      if (updates.quantity !== undefined || updates.unit !== undefined || updates.expiry_date !== undefined || updates.expiryDate !== undefined) {
+        await callTrpc('pantry.update', {
+          itemId: Number(itemId),
+          quantity: updates.quantity !== undefined ? String(updates.quantity) : undefined,
+          unit: updates.unit || undefined,
+          expiryDate: updates.expiry_date ?? updates.expiryDate ?? null
+        }, 'mutation');
+      }
+
+      await delay(100);
+      currentPantry = currentPantry.map(item => {
+        const id = item.item_id ?? item.itemId;
+        return id === itemId ? {
+          ...item,
+          ...updates,
+          quantity: updates.quantity !== undefined ? Math.max(0, Number(updates.quantity)) : item.quantity,
+          expiry_date: updates.expiry_date ?? updates.expiryDate ?? item.expiry_date,
+          expiryDate: updates.expiry_date ?? updates.expiryDate ?? item.expiryDate
+        } : item;
+      }).filter(item => item.quantity > 0);
+      setStorage('items', currentPantry);
+      return { success: true, itemId, updates };
+    },
+
     async updateQuantity(itemId, newQuantity) {
       await callTrpc('pantry.update', {
         itemId: Number(itemId),
