@@ -1,11 +1,14 @@
+import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { sdk } from "./_core/sdk";
 import {
   addPantryItem,
   createRecipe,
+  createUserWithPassword,
   cookRecipe,
   expirePantry,
   findStoredRecipeCandidates,
@@ -13,6 +16,8 @@ import {
   getPantry,
   getPantrySnapshot,
   getRecipeDetails,
+  getUserByEmail,
+  getUserByOpenId,
   getWasteSummary,
   listCategories,
   listIngredients,
@@ -22,9 +27,10 @@ import {
   recordPurchase,
   removePantryItem,
   updatePantryItem,
+  upsertUser,
 } from "./db";
 import { recommendFromWeb } from "./recipePipeline";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
 const difficulty = z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]);
 const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").optional();
@@ -38,6 +44,70 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    register: publicProcedure.input(z.object({
+      name: z.string().min(1, "Name is required"),
+      email: z.string().email("Invalid email address"),
+      password: z.string().min(4, "Password must be at least 4 characters"),
+      cookingLevel: difficulty.default("BEGINNER"),
+    })).mutation(async ({ ctx, input }) => {
+      const passwordHash = await bcrypt.hash(input.password, 10);
+      try {
+        const user = await createUserWithPassword({
+          name: input.name,
+          email: input.email,
+          passwordHash,
+          cookingLevel: input.cookingLevel,
+        });
+
+        const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+        return {
+          user_id: user.id,
+          name: user.name,
+          email: user.email,
+          cooking_level: user.cookingLevel,
+        };
+      } catch (err: any) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: err.message || "An account with this email already exists",
+        });
+      }
+    }),
+    login: publicProcedure.input(z.object({
+      email: z.string().email("Invalid email address"),
+      password: z.string().min(1, "Password is required"),
+    })).mutation(async ({ ctx, input }) => {
+      const user = await getUserByEmail(input.email);
+      if (!user || !user.passwordHash) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid email or password",
+        });
+      }
+
+      const isMatch = await bcrypt.compare(input.password, user.passwordHash);
+      if (!isMatch) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid email or password",
+        });
+      }
+
+      await upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || "", expiresInMs: ONE_YEAR_MS });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+      return {
+        user_id: user.id,
+        name: user.name,
+        email: user.email,
+        cooking_level: user.cookingLevel,
+      };
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

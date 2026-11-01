@@ -8,6 +8,13 @@
       "when": 1793525182885,
       "tag": "0000_graceful_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793528973679,
+      "tag": "0001_useful_mongoose",
+      "breakpoints": true
     }
   ]
 }

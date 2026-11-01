@@ -22,6 +22,7 @@ export async function createContext(
       openId: "demo-user",
       name: "Alex Chef",
       email: "demo@pantrymanager.local",
+      passwordHash: null,
       loginMethod: "demo",
       role: "admin",
       cookingLevel: "BEGINNER",

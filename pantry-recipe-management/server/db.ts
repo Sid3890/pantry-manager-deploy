@@ -34,6 +34,12 @@ export async function getDb() {
       // Connect to PostgreSQL (Supabase pooler / direct)
       // SSL mode is enabled by default for cloud hosts (Supabase requires SSL)
       const isLocal = databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1");
+
+      try {
+        const parsed = new URL(databaseUrl.replace(/^postgresql:\/\//i, "http://"));
+        console.log(`[Database] Initializing PostgreSQL connection to host='${parsed.hostname}', port='${parsed.port || 5432}', db='${parsed.pathname.replace(/^\//, '')}', ssl=${!isLocal}`);
+      } catch {}
+
       _client = postgres(databaseUrl, {
         max: process.env.NODE_ENV === "production" ? 10 : 5,
         idle_timeout: 20,
@@ -57,7 +63,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!db) return;
   const values: InsertUser = { openId: user.openId };
   const updateSet: Record<string, unknown> = {};
-  for (const field of ["name", "email", "loginMethod", "cookingLevel"] as const) {
+  for (const field of ["name", "email", "loginMethod", "cookingLevel", "passwordHash"] as const) {
     if (user[field] !== undefined) {
       values[field] = user[field] as never;
       updateSet[field] = user[field];
@@ -86,6 +92,46 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       target: users.openId,
       set: updateSet,
     });
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  return result[0];
+}
+
+export async function createUserWithPassword(input: {
+  name: string;
+  email: string;
+  passwordHash: string;
+  cookingLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not configured");
+
+  const normalizedEmail = input.email.toLowerCase().trim();
+  const openId = `local:${normalizedEmail}`;
+
+  const existing = await getUserByEmail(normalizedEmail);
+  if (existing) {
+    throw new Error("An account with this email already exists");
+  }
+
+  const result = await db
+    .insert(users)
+    .values({
+      openId,
+      name: input.name.trim(),
+      email: normalizedEmail,
+      passwordHash: input.passwordHash,
+      loginMethod: "local",
+      cookingLevel: input.cookingLevel || "BEGINNER",
+      role: "user",
+    })
+    .returning();
+
+  return result[0];
 }
 
 export async function getUserByOpenId(openId: string) {
