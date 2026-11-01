@@ -59,12 +59,6 @@ export const ingredients = pgTable(
   })
 );
 
-export const suppliers = pgTable("suppliers", {
-  supId: serial("sup_id").primaryKey(),
-  name: varchar("name", { length: 160 }).notNull(),
-  contact: varchar("contact", { length: 320 }),
-});
-
 export const purchaseLog = pgTable(
   "purchase_log",
   {
@@ -75,11 +69,11 @@ export const purchaseLog = pgTable(
     ingredientId: integer("ingredient_id")
       .notNull()
       .references(() => ingredients.ingredientId),
-    supId: integer("sup_id").references(() => suppliers.supId),
     purchaseDate: timestamp("purchase_date", { withTimezone: true }).defaultNow().notNull(),
     quantityPurchased: decimal("quantity_purchased", { precision: 14, scale: 3 }).notNull(),
     unit: varchar("unit", { length: 32 }).notNull(),
     totalPrice: decimal("total_price", { precision: 14, scale: 2 }).notNull().default("0"),
+    supplierName: varchar("supplier_name", { length: 160 }),
   },
   table => ({
     userDateIdx: index("purchase_log_user_date_idx").on(table.userId, table.purchaseDate),
@@ -210,3 +204,4 @@ export type PantryItem = typeof pantryItems.$inferSelect;
 export type Recipe = typeof recipes.$inferSelect;
 export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
 export type WasteLog = typeof wasteLog.$inferSelect;
+export type PurchaseLog = typeof purchaseLog.$inferSelect;

@@ -11,7 +11,6 @@ import {
   purchaseLog,
   recipeIngredients,
   recipes,
-  suppliers,
   users,
   wasteLog,
 } from "../drizzle/schema";
@@ -311,16 +310,10 @@ export async function removePantryItem(userId: number, itemId: number, markAsWas
   });
 }
 
-export async function listSuppliers() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(suppliers).orderBy(asc(suppliers.name));
-}
-
 export async function recordPurchase(input: {
   userId: number;
   ingredientId: number;
-  supId?: number;
+  supplierName?: string;
   quantityPurchased: string;
   unit: string;
   totalPrice: string;
@@ -334,7 +327,7 @@ export async function recordPurchase(input: {
       .values({
         userId: input.userId,
         ingredientId: input.ingredientId,
-        supId: input.supId,
+        supplierName: input.supplierName,
         quantityPurchased: input.quantityPurchased,
         unit: input.unit,
         totalPrice: input.totalPrice,
@@ -720,7 +713,6 @@ export async function syncDatabaseSequences(): Promise<void> {
       SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1));
       SELECT setval(pg_get_serial_sequence('pantry_items', 'item_id'), COALESCE((SELECT MAX(item_id) FROM pantry_items), 1));
       SELECT setval(pg_get_serial_sequence('purchase_log', 'purchase_id'), COALESCE((SELECT MAX(purchase_id) FROM purchase_log), 1));
-      SELECT setval(pg_get_serial_sequence('suppliers', 'sup_id'), COALESCE((SELECT MAX(sup_id) FROM suppliers), 1));
       SELECT setval(pg_get_serial_sequence('recipe_ingredients', 'ri_id'), COALESCE((SELECT MAX(ri_id) FROM recipe_ingredients), 1));
       SELECT setval(pg_get_serial_sequence('cooking_log', 'cook_id'), COALESCE((SELECT MAX(cook_id) FROM cooking_log), 1));
       SELECT setval(pg_get_serial_sequence('dietary_tags', 'tag_id'), COALESCE((SELECT MAX(tag_id) FROM dietary_tags), 1));

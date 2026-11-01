@@ -15,6 +15,13 @@
       "when": 1793528973679,
       "tag": "0001_useful_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793549000000,
+      "tag": "0002_drop_suppliers",
+      "breakpoints": true
     }
   ]
 }

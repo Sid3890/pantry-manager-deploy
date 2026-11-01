@@ -23,7 +23,6 @@ import {
   listCategories,
   listIngredients,
   listRecipes,
-  listSuppliers,
   getCookingHistory,
   recordPurchase,
   removePantryItem,
@@ -124,10 +123,6 @@ export const appRouter = router({
     list: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ input }) => listIngredients(input?.search)),
   }),
 
-  suppliers: router({
-    list: protectedProcedure.query(() => listSuppliers()),
-  }),
-
   pantry: router({
     list: protectedProcedure.query(({ ctx }) => getPantry(ctx.user.id)),
     snapshot: protectedProcedure.query(({ ctx }) => getPantrySnapshot(ctx.user.id)),
@@ -154,7 +149,7 @@ export const appRouter = router({
   purchases: router({
     record: protectedProcedure.input(z.object({
       ingredientId: z.number().int().positive(),
-      supId: z.number().int().positive().optional(),
+      supplierName: z.string().max(160).optional(),
       quantityPurchased: z.string().refine(value => Number(value) > 0, "Purchased quantity must be greater than zero"),
       unit: z.string().min(1).max(32),
       totalPrice: z.string().refine(value => Number(value) >= 0, "Total price cannot be negative"),

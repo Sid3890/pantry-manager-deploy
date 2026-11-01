@@ -25,7 +25,7 @@ All feature procedures require the authenticated Google-backed session and are a
 | `pantry.add`, `pantry.update`, `pantry.remove` | Manage pantry rows. |
 | `pantry.expire` | Record and remove expired stock. |
 | `purchases.record` | Record a purchase and add its quantity to pantry atomically. |
-| `ingredients.list`, `categories.list`, `suppliers.list` | Supporting lookup data. |
+| `ingredients.list`, `categories.list` | Supporting lookup data. |
 | `recipes.list`, `recipes.details`, `recipes.create` | Recipe library operations. |
 | `recipes.recommend` | Stored SQL matching followed by guarded web/LLM fallback. |
 | `recipes.cook` | Availability recheck, deduction, and cooking log transaction. |
@@ -34,7 +34,7 @@ All feature procedures require the authenticated Google-backed session and are a
 
 ## Schema mapping
 
-The document's 11 core entities are represented by `users`, `categories`, `ingredients`, `pantry_items`, `suppliers`, `purchase_log`, `recipes`, `recipe_ingredients`, `cooking_log`, `dietary_tags`, and `waste_log`. `waste_log.user_id` is retained in this implementation so reports remain isolated per authenticated household; it does not change the ingredient-level waste model.
+The application's core entities are represented by `users`, `categories`, `ingredients`, `pantry_items`, `purchase_log`, `recipes`, `recipe_ingredients`, `cooking_log`, `dietary_tags`, and `waste_log`. `purchase_log` records ingredient purchases with an optional plain text `supplier_name`. `waste_log.user_id` is retained in this implementation so reports remain isolated per authenticated household; it does not change the ingredient-level waste model.
 
 The managed runtime uses MySQL/TiDB, so Oracle-specific PL/SQL is represented by equivalent transactional server/database operations. The business rules map directly to Oracle implementations: `findStoredRecipeCandidates` corresponds to the document's `match_recipe` function, `cookRecipe` corresponds to `cook_recipe`, and `expirePantry` corresponds to the expiry trigger/procedure flow. If deploying against Oracle, replace the Drizzle adapter and date/decimal mappings with `oracledb` bindings and move these three transactional functions into PL/SQL packages without changing the tRPC contracts.
 

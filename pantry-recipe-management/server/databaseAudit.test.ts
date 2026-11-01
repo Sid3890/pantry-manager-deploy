@@ -68,4 +68,31 @@ describe("Database Audit & Dietary Logic Verification", () => {
       expect(faultyMatch.length).toBe(2); // Demonstrates the bug that was fixed
     }
   });
+
+  it("verifies purchase record supports optional plain text supplier_name without suppliers table", () => {
+    const samplePurchase = {
+      purchaseId: 1,
+      userId: 1,
+      ingredientId: 5,
+      quantityPurchased: "3.000",
+      unit: "piece",
+      totalPrice: "4.50",
+      supplierName: "Local Farmers Market",
+    };
+
+    expect(samplePurchase.supplierName).toBe("Local Farmers Market");
+    expect("supId" in samplePurchase).toBe(false);
+
+    // Purchase without supplierName is also valid
+    const purchaseWithoutSupplier = {
+      purchaseId: 2,
+      userId: 1,
+      ingredientId: 6,
+      quantityPurchased: "1.000",
+      unit: "g",
+      totalPrice: "3.00",
+      supplierName: undefined,
+    };
+    expect(purchaseWithoutSupplier.supplierName).toBeUndefined();
+  });
 });

@@ -10,7 +10,6 @@ SELECT setval(pg_get_serial_sequence('recipes', 'recipe_id'), COALESCE((SELECT M
 SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1));
 SELECT setval(pg_get_serial_sequence('pantry_items', 'item_id'), COALESCE((SELECT MAX(item_id) FROM pantry_items), 1));
 SELECT setval(pg_get_serial_sequence('purchase_log', 'purchase_id'), COALESCE((SELECT MAX(purchase_id) FROM purchase_log), 1));
-SELECT setval(pg_get_serial_sequence('suppliers', 'sup_id'), COALESCE((SELECT MAX(sup_id) FROM suppliers), 1));
 SELECT setval(pg_get_serial_sequence('recipe_ingredients', 'ri_id'), COALESCE((SELECT MAX(ri_id) FROM recipe_ingredients), 1));
 SELECT setval(pg_get_serial_sequence('cooking_log', 'cook_id'), COALESCE((SELECT MAX(cook_id) FROM cooking_log), 1));
 SELECT setval(pg_get_serial_sequence('dietary_tags', 'tag_id'), COALESCE((SELECT MAX(tag_id) FROM dietary_tags), 1));
@@ -36,7 +35,6 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingredients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pantry_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recipe_ingredients ENABLE ROW LEVEL SECURITY;
@@ -52,3 +50,4 @@ SELECT
 FROM pg_tables
 WHERE schemaname = 'public'
 ORDER BY tablename;
+
