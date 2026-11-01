@@ -410,13 +410,20 @@ export async function findStoredRecipeCandidates(
 ) {
   try {
     const [pantry, recipeList] = await Promise.all([getPantrySnapshot(userId), listRecipes(filters)]);
-    const availableByIngredient = new Map(
-      pantry.map(item => [`${item.ingredientId}:${item.unit}`, Number(item.quantity)])
+    const availableByIngredientId = new Map(
+      pantry.map(item => [`${item.ingredientId}:${item.unit.toLowerCase().trim()}`, Number(item.quantity)])
     );
+    const availableByName = new Map(
+      pantry.map(item => [`${item.ingredientName.toLowerCase().trim()}:${item.unit.toLowerCase().trim()}`, Number(item.quantity)])
+    );
+
     return recipeList
       .map(recipe => {
         const ingredientResults = recipe.ingredients.map(ingredient => {
-          const available = availableByIngredient.get(`${ingredient.ingredientId}:${ingredient.unit}`) ?? 0;
+          const unitKey = ingredient.unit.toLowerCase().trim();
+          const idKey = `${ingredient.ingredientId}:${unitKey}`;
+          const nameKey = `${ingredient.name.toLowerCase().trim()}:${unitKey}`;
+          const available = availableByIngredientId.get(idKey) ?? availableByName.get(nameKey) ?? 0;
           const required = Number(ingredient.quantityRequired);
           return { ...ingredient, available, isAvailable: available >= required };
         });

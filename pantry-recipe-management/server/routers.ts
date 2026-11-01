@@ -119,14 +119,23 @@ export const appRouter = router({
       const stored = await findStoredRecipeCandidates(ctx.user.id, { maxTime: input.maxTime, difficulty: input.cookingLevel });
       const excludeIds = new Set(input.excludeRecipeIds ?? []);
 
-      // Shuffle DB results so users see variety, then separate by availability tier
-      const shuffled = stored.filter(r => !excludeIds.has(r.recipeId));
-      const fullyAvailable = shuffled.filter(r => r.availabilityPercent === 100);
-      const almostAvailable = shuffled.filter(r => r.availabilityPercent >= 50 && r.availabilityPercent < 100);
+      // If user has excluded recipes from prior views, filter; if all would be filtered out, keep all
+      let filteredStored = stored.filter(r => !excludeIds.has(r.recipeId));
+      if (filteredStored.length === 0 && stored.length > 0) {
+        filteredStored = stored;
+      }
+
+      const fullyAvailable = filteredStored.filter(r => r.availabilityPercent === 100);
+      const almostAvailable = filteredStored.filter(r => r.availabilityPercent >= 50 && r.availabilityPercent < 100);
+      const otherRecipes = filteredStored.filter(r => r.availabilityPercent < 50);
 
       // Fisher-Yates shuffle for DB results
       const shuffleArr = <T>(a: T[]): T[] => { const c = [...a]; for (let i = c.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [c[i], c[j]] = [c[j], c[i]]; } return c; };
-      const dbCandidates = [...shuffleArr(fullyAvailable).slice(0, 6), ...shuffleArr(almostAvailable).slice(0, 4)];
+      const dbCandidates = [
+        ...shuffleArr(fullyAvailable),
+        ...shuffleArr(almostAvailable),
+        ...shuffleArr(otherRecipes)
+      ].slice(0, 10);
 
       // If we have 5+ fully-available DB recipes, return them directly without hitting the web
       if (fullyAvailable.length >= 5) {
