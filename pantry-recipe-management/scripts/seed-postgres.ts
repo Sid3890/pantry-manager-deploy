@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { categories, ingredients, recipes, recipeIngredients, users, pantryItems } from "../drizzle/schema";
+import { categories, ingredients, recipes, recipeIngredients, users, pantryItems, dietaryTags } from "../drizzle/schema";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -97,6 +97,16 @@ async function seed() {
     { recipeId: 203, ingredientId: 7, quantityRequired: "200.000", unit: "g" },
     { recipeId: 203, ingredientId: 6, quantityRequired: "15.000", unit: "g" },
     { recipeId: 203, ingredientId: 10, quantityRequired: "3.000", unit: "clove" },
+  ]).onConflictDoNothing();
+
+  // 5. Dietary Tags
+  console.log("- Seeding dietary tags...");
+  await db.insert(dietaryTags).values([
+    { recipeId: 201, label: "Vegetarian" },
+    { recipeId: 201, label: "High Protein" },
+    { recipeId: 202, label: "Eggetarian" },
+    { recipeId: 202, label: "High Protein" },
+    { recipeId: 203, label: "Vegetarian" },
   ]).onConflictDoNothing();
 
   console.log("✓ Seed completed successfully!");

@@ -144,7 +144,10 @@ export const appRouter = router({
       unit: z.string().min(1).max(32).optional(),
       expiryDate: dateInput.nullable(),
     })).mutation(({ ctx, input }) => updatePantryItem(ctx.user.id, input.itemId, { quantity: input.quantity, unit: input.unit, expiryDate: input.expiryDate === null ? null : toDate(input.expiryDate) })),
-    remove: protectedProcedure.input(z.object({ itemId: z.number().int().positive() })).mutation(({ ctx, input }) => removePantryItem(ctx.user.id, input.itemId)),
+    remove: protectedProcedure.input(z.object({
+      itemId: z.number().int().positive(),
+      markAsWasted: z.boolean().optional(),
+    })).mutation(({ ctx, input }) => removePantryItem(ctx.user.id, input.itemId, Boolean(input.markAsWasted))),
     expire: protectedProcedure.input(z.object({ asOf: dateInput }).optional()).mutation(({ ctx, input }) => expirePantry(ctx.user.id, input?.asOf ? new Date(`${input.asOf}T23:59:59.999Z`) : new Date())),
   }),
 
@@ -199,7 +202,15 @@ export const appRouter = router({
             nearestExpiry: null,
           })) ?? []);
 
-      const stored = await findStoredRecipeCandidates(ctx.user.id, { maxTime: input.maxTime, difficulty: input.cookingLevel }, pantry);
+      const stored = await findStoredRecipeCandidates(
+        ctx.user.id,
+        {
+          maxTime: input.maxTime,
+          difficulty: input.cookingLevel,
+          tag: input.dietaryPreference && input.dietaryPreference !== "ALL" ? input.dietaryPreference : undefined,
+        },
+        pantry
+      );
       const excludeIds = new Set(input.excludeRecipeIds ?? []);
 
       // If user has excluded recipes from prior views, filter; if all would be filtered out, keep all

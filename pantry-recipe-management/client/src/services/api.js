@@ -340,7 +340,7 @@ export const api = {
     },
 
     async removeItem(itemId, markAsWasted = false) {
-      await callTrpc('pantry.remove', { itemId: Number(itemId) }, 'mutation');
+      await callTrpc('pantry.remove', { itemId: Number(itemId), markAsWasted: Boolean(markAsWasted) }, 'mutation');
 
       await delay(120);
       const target = currentPantry.find(i => (i.item_id ?? i.itemId) === itemId);

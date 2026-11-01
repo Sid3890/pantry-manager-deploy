@@ -48,6 +48,8 @@ export async function getDb() {
         prepare: false, // Recommended for Supabase transaction pooler (port 6543)
       });
       _db = drizzle(_client);
+      // Synchronize primary key sequences asynchronously on connection
+      syncDatabaseSequences().catch(err => console.warn('[Database] Initial sequence sync warning:', err));
     } catch (error) {
       console.error("[Database] Failed to connect to PostgreSQL:", error);
       _db = null;
@@ -284,11 +286,29 @@ export async function updatePantryItem(
   return getPantry(userId);
 }
 
-export async function removePantryItem(userId: number, itemId: number) {
+export async function removePantryItem(userId: number, itemId: number, markAsWasted = false) {
   const db = await getDb();
   if (!db) throw new Error("Database is not configured");
-  await db.delete(pantryItems).where(and(eq(pantryItems.itemId, itemId), eq(pantryItems.userId, userId)));
-  return { success: true } as const;
+  return db.transaction(async tx => {
+    const existing = await tx
+      .select()
+      .from(pantryItems)
+      .where(and(eq(pantryItems.itemId, itemId), eq(pantryItems.userId, userId)))
+      .limit(1);
+    if (!existing[0]) return { success: true } as const;
+
+    if (markAsWasted) {
+      await tx.insert(wasteLog).values({
+        userId,
+        ingredientId: existing[0].ingredientId,
+        quantityWasted: existing[0].quantity,
+        unit: existing[0].unit,
+        expiredOn: existing[0].expiryDate ?? new Date().toISOString().slice(0, 10),
+      });
+    }
+    await tx.delete(pantryItems).where(eq(pantryItems.itemId, itemId));
+    return { success: true } as const;
+  });
 }
 
 export async function listSuppliers() {
@@ -392,9 +412,23 @@ export async function listRecipes(filters?: {
       .orderBy(asc(recipes.name));
     const detailed = await Promise.all(base.map(recipe => getRecipeDetails(recipe.recipeId)));
     const filtered = detailed.filter((recipe): recipe is RecipeDetails => Boolean(recipe));
-    return filters?.tag
-      ? filtered.filter(recipe => recipe.dietaryTags.some(tag => tag.toLowerCase() === filters.tag!.toLowerCase()))
-      : filtered;
+    if (!filters?.tag || filters.tag.toUpperCase() === "ALL") return filtered;
+    const tagUpper = filters.tag.trim().toUpperCase();
+    return filtered.filter(recipe => {
+      const hasTag = recipe.dietaryTags.some(t => t.toUpperCase() === tagUpper || t.toUpperCase().includes(tagUpper));
+      if (hasTag) return true;
+
+      // Safe ingredient fallback for Vegetarian filter
+      if (tagUpper === "VEGETARIAN") {
+        const nonVegKeywords = ["chicken", "meat", "beef", "pork", "fish", "prawn", "shrimp", "mutton", "egg", "eggs"];
+        const hasNonVeg = recipe.ingredients.some(ing => {
+          const name = ing.name.toLowerCase();
+          return nonVegKeywords.some(kw => name.includes(kw));
+        });
+        return !hasNonVeg;
+      }
+      return false;
+    });
   } catch (error) {
     console.warn("[listRecipes] Database query failed, returning empty:", error);
     return [];
@@ -547,7 +581,7 @@ export async function cookRecipe(userId: number, recipeId: number) {
     const missing: string[] = [];
     for (const item of required) {
       const available = pantry
-        .filter(row => (row.ingredientId === item.ingredientId || row.unit.toLowerCase().trim() === item.unit.toLowerCase().trim()))
+        .filter(row => row.ingredientId === item.ingredientId)
         .reduce((sum, row) => sum + Number(row.quantity), 0);
       if (available < Number(item.quantityRequired))
         missing.push(`${item.name} requires ${item.quantityRequired} ${item.unit}, available ${available}`);
@@ -556,7 +590,7 @@ export async function cookRecipe(userId: number, recipeId: number) {
 
     for (const item of required) {
       let remaining = Number(item.quantityRequired);
-      const rows = pantry.filter(row => row.ingredientId === item.ingredientId || row.unit.toLowerCase().trim() === item.unit.toLowerCase().trim());
+      const rows = pantry.filter(row => row.ingredientId === item.ingredientId);
       for (const row of rows) {
         if (remaining <= 0) break;
         const current = Number(row.quantity);
@@ -673,4 +707,27 @@ export async function getDashboard(userId: number) {
     recentCooking: history,
     waste,
   };
+}
+
+export async function syncDatabaseSequences(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.execute(sql`
+      SELECT setval(pg_get_serial_sequence('categories', 'cat_id'), COALESCE((SELECT MAX(cat_id) FROM categories), 1));
+      SELECT setval(pg_get_serial_sequence('ingredients', 'ingredient_id'), COALESCE((SELECT MAX(ingredient_id) FROM ingredients), 1));
+      SELECT setval(pg_get_serial_sequence('recipes', 'recipe_id'), COALESCE((SELECT MAX(recipe_id) FROM recipes), 1));
+      SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1));
+      SELECT setval(pg_get_serial_sequence('pantry_items', 'item_id'), COALESCE((SELECT MAX(item_id) FROM pantry_items), 1));
+      SELECT setval(pg_get_serial_sequence('purchase_log', 'purchase_id'), COALESCE((SELECT MAX(purchase_id) FROM purchase_log), 1));
+      SELECT setval(pg_get_serial_sequence('suppliers', 'sup_id'), COALESCE((SELECT MAX(sup_id) FROM suppliers), 1));
+      SELECT setval(pg_get_serial_sequence('recipe_ingredients', 'ri_id'), COALESCE((SELECT MAX(ri_id) FROM recipe_ingredients), 1));
+      SELECT setval(pg_get_serial_sequence('cooking_log', 'cook_id'), COALESCE((SELECT MAX(cook_id) FROM cooking_log), 1));
+      SELECT setval(pg_get_serial_sequence('dietary_tags', 'tag_id'), COALESCE((SELECT MAX(tag_id) FROM dietary_tags), 1));
+      SELECT setval(pg_get_serial_sequence('waste_log', 'waste_id'), COALESCE((SELECT MAX(waste_id) FROM waste_log), 1));
+    `);
+    console.log("[Database] PostgreSQL primary key sequences verified and synchronized with MAX(id).");
+  } catch (error) {
+    console.warn("[Database] Sequence synchronization warning:", error);
+  }
 }
