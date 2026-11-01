@@ -1,5 +1,6 @@
 import { startGoogleLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { clearAllQueryCaches } from "@/lib/queryClient";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
@@ -23,6 +24,8 @@ export function useAuth(options?: UseAuthOptions) {
       if (error instanceof TRPCClientError && error.data?.code === "UNAUTHORIZED") return;
       throw error;
     } finally {
+      // Clear all cached queries and mutations in memory so stale data is never shown
+      clearAllQueryCaches();
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }

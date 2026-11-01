@@ -1,3 +1,4 @@
+import { clearAllQueryCaches } from '../lib/queryClient';
 // REST & tRPC API Service Layer
 // Bridges seamlessly to the Node.js + Express + tRPC backend (/api/trpc),
 // while maintaining a high-fidelity local state store when running standalone.
@@ -252,7 +253,14 @@ export const api = {
     async logout() {
       await callTrpc('auth.logout', {}, 'mutation');
       currentUser = null;
+      currentPantry = [];
+      currentCookingLog = [];
+      currentWasteLog = [];
       setStorage('user', null);
+      setStorage('items', []);
+      setStorage('cooking_log', []);
+      setStorage('waste_log', []);
+      clearAllQueryCaches();
     },
 
     async updatePreferences(updates) {

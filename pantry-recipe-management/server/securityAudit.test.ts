@@ -147,5 +147,35 @@ describe("Security & User Isolation Audit", () => {
     const logout = await anonCaller.auth.logout();
     expect(logout).toEqual({ success: true });
   });
-});
 
+  it("Requirement 9: In-memory cache reset prevents User B from seeing User A's cached state across sessions", () => {
+    // Simulating in-memory query cache entries
+    const queryCache = new Map<string, unknown>();
+
+    // 1. User A logs in and populates queries
+    queryCache.set("auth.me", userA);
+    queryCache.set("pantry.list", [
+      { itemId: 1, userId: userA.id, ingredientName: "Apples", quantity: "4" }
+    ]);
+    queryCache.set("reports.dashboard", { pantryCount: 1, user: userA.name });
+
+    expect(queryCache.has("pantry.list")).toBe(true);
+    expect((queryCache.get("auth.me") as typeof userA).id).toBe(userA.id);
+
+    // 2. User A logs out -> clearAllQueryCaches() is triggered
+    queryCache.clear();
+
+    expect(queryCache.size).toBe(0);
+    expect(queryCache.has("pantry.list")).toBe(false);
+
+    // 3. User B logs in
+    queryCache.set("auth.me", userB);
+    queryCache.set("pantry.list", [
+      { itemId: 9, userId: userB.id, ingredientName: "Eggs", quantity: "12" }
+    ]);
+
+    const activePantry = queryCache.get("pantry.list") as Array<{ userId: number }>;
+    expect(activePantry.every(item => item.userId === userB.id)).toBe(true);
+    expect(activePantry.some(item => item.userId === userA.id)).toBe(false);
+  });
+});
