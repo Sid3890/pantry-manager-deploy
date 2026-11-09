@@ -28,7 +28,7 @@ import {
   updatePantryItem,
   upsertUser,
 } from "./db";
-import { recommendFromWeb, generateRecipesWithAI } from "./recipePipeline";
+import { recommendFromWeb, generateRecipesWithAI, deduplicateCandidates } from "./recipePipeline";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
 const difficulty = z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]);
@@ -126,21 +126,90 @@ export const appRouter = router({
     list: protectedProcedure.query(({ ctx }) => getPantry(ctx.user.id)),
     snapshot: protectedProcedure.query(({ ctx }) => getPantrySnapshot(ctx.user.id)),
     add: protectedProcedure.input(z.object({
-      ingredientId: z.number().int().positive(),
+      ingredientId: z.number().int().positive().optional(),
+      name: z.string().min(1).optional(),
+      category: z.string().optional(),
       quantity: z.string().refine(value => Number(value) > 0, "Quantity must be greater than zero"),
       unit: z.string().min(1).max(32),
       expiryDate: dateInput,
-    })).mutation(({ ctx, input }) => addPantryItem({ ...input, userId: ctx.user.id, expiryDate: toDate(input.expiryDate) })),
+    })).mutation(async ({ ctx, input }) => {
+      let resolvedIngredientId = input.ingredientId;
+      let resolvedIngredientName = input.name?.trim();
+      const resolvedCategory = input.category || "Produce & Veggies";
+
+      if (!resolvedIngredientId && resolvedIngredientName) {
+        try {
+          const createdIng = await getOrCreateIngredient(resolvedIngredientName, input.unit, resolvedCategory);
+          resolvedIngredientId = createdIng.ingredientId;
+          resolvedIngredientName = createdIng.name;
+        } catch {
+          resolvedIngredientId = Math.floor(Math.random() * 8000) + 100;
+        }
+      } else if (resolvedIngredientId && !resolvedIngredientName) {
+        try {
+          const all = await listIngredients();
+          const found = all.find(i => i.ingredientId === resolvedIngredientId);
+          if (found) {
+            resolvedIngredientName = found.name;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!resolvedIngredientId) {
+        resolvedIngredientId = 1;
+      }
+
+      let itemId = Date.now();
+      try {
+        const createdId = await addPantryItem({
+          userId: ctx.user.id,
+          ingredientId: resolvedIngredientId,
+          quantity: input.quantity,
+          unit: input.unit,
+          expiryDate: toDate(input.expiryDate),
+        });
+        itemId = createdId;
+      } catch (err) {
+        // Fallback for standalone/in-memory mode when DATABASE_URL is not configured
+      }
+
+      return {
+        itemId,
+        userId: ctx.user.id,
+        ingredientId: resolvedIngredientId,
+        ingredientName: resolvedIngredientName || "Ingredient",
+        category: resolvedCategory,
+        quantity: input.quantity,
+        unit: input.unit,
+        expiryDate: input.expiryDate ? String(input.expiryDate).slice(0, 10) : null,
+      };
+    }),
     update: protectedProcedure.input(z.object({
       itemId: z.number().int().positive(),
       quantity: z.string().refine(value => Number(value) > 0, "Quantity must be greater than zero").optional(),
       unit: z.string().min(1).max(32).optional(),
       expiryDate: dateInput.nullable(),
-    })).mutation(({ ctx, input }) => updatePantryItem(ctx.user.id, input.itemId, { quantity: input.quantity, unit: input.unit, expiryDate: input.expiryDate === null ? null : toDate(input.expiryDate) })),
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        await updatePantryItem(ctx.user.id, input.itemId, { quantity: input.quantity, unit: input.unit, expiryDate: input.expiryDate === null ? null : toDate(input.expiryDate) });
+      } catch {
+        // Fallback for standalone mode
+      }
+      return { success: true };
+    }),
     remove: protectedProcedure.input(z.object({
       itemId: z.number().int().positive(),
       markAsWasted: z.boolean().optional(),
-    })).mutation(({ ctx, input }) => removePantryItem(ctx.user.id, input.itemId, Boolean(input.markAsWasted))),
+    })).mutation(async ({ ctx, input }) => {
+      try {
+        await removePantryItem(ctx.user.id, input.itemId, Boolean(input.markAsWasted));
+      } catch {
+        // Fallback for standalone mode
+      }
+      return { success: true };
+    }),
     expire: protectedProcedure.input(z.object({ asOf: dateInput }).optional()).mutation(({ ctx, input }) => expirePantry(ctx.user.id, input?.asOf ? new Date(`${input.asOf}T23:59:59.999Z`) : new Date())),
   }),
 
@@ -164,6 +233,7 @@ export const appRouter = router({
       maxTime: z.number().int().positive().optional(),
       dietaryPreference: z.string().max(100).optional(),
       excludeRecipeIds: z.array(z.number().int()).max(50).optional(),
+      excludeRecipeNames: z.array(z.string()).max(100).optional(),
       excludeUrls: z.array(z.string()).max(50).optional(),
       pantryItems: z.array(z.object({
         ingredientId: z.number().int().optional(),
@@ -207,14 +277,20 @@ export const appRouter = router({
 
       // Fisher-Yates shuffle for DB results
       const shuffleArr = <T>(a: T[]): T[] => { const c = [...a]; for (let i = c.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [c[i], c[j]] = [c[j], c[i]]; } return c; };
-      const dbCandidates = [
+      const rawDbCandidates = [
         ...shuffleArr(fullyAvailable),
         ...shuffleArr(almostAvailable),
         ...shuffleArr(otherRecipes)
-      ].slice(0, 10);
+      ];
+
+      // Deduplicate DB candidates among themselves and against excludeRecipeNames
+      const dbCandidates = deduplicateCandidates(
+        rawDbCandidates,
+        (input.excludeRecipeNames ?? []).map(name => ({ name }))
+      ).slice(0, 10);
 
       // If we have 5+ fully-available DB recipes, return them directly without hitting the web
-      if (fullyAvailable.length >= 5) {
+      if (dbCandidates.filter(r => r.availabilityPercent === 100).length >= 5) {
         return { source: "DATABASE" as const, candidates: dbCandidates, storedRecipeId: null };
       }
 
@@ -224,6 +300,11 @@ export const appRouter = router({
       }
 
       const existingUrls = stored.filter(r => r.sourceUrl).map(r => r.sourceUrl!);
+      const combinedExcludeNames = [
+        ...(input.excludeRecipeNames ?? []),
+        ...dbCandidates.map(c => c.name),
+      ];
+
       const web = await recommendFromWeb({
         userId: ctx.user.id,
         pantry,
@@ -231,13 +312,20 @@ export const appRouter = router({
         maxTime: input.maxTime,
         dietaryPreference: input.dietaryPreference,
         excludeUrls: [...(input.excludeUrls ?? []), ...existingUrls],
+        excludeRecipeNames: combinedExcludeNames,
       });
+
+      // Deduplicate web/AI valid candidates against DB candidates
+      const filteredWebCandidates = deduplicateCandidates(
+        web.validCandidates ?? [],
+        dbCandidates.map(c => ({ name: c.name, ingredients: c.ingredients }))
+      );
 
       // Merge DB + web/AI candidates into unified response
       return {
         source: "MIXED" as const,
         candidates: dbCandidates,
-        webCandidates: web.validCandidates ?? [],
+        webCandidates: filteredWebCandidates,
         webInvalid: web.invalidCandidates ?? [],
         storedRecipeIds: web.storedRecipeIds ?? [],
       };

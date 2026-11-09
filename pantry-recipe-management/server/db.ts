@@ -204,6 +204,7 @@ export async function getPantry(userId: number) {
       userId: pantryItems.userId,
       ingredientId: pantryItems.ingredientId,
       ingredientName: ingredients.name,
+      category: categories.label,
       defaultUnit: ingredients.defaultUnit,
       quantity: pantryItems.quantity,
       unit: pantryItems.unit,
@@ -212,6 +213,7 @@ export async function getPantry(userId: number) {
     })
     .from(pantryItems)
     .innerJoin(ingredients, eq(pantryItems.ingredientId, ingredients.ingredientId))
+    .leftJoin(categories, eq(ingredients.catId, categories.catId))
     .where(eq(pantryItems.userId, userId))
     .orderBy(asc(pantryItems.expiryDate), asc(ingredients.name));
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Clock, UtensilsCrossed, CheckCircle2, AlertCircle, Sparkles, ChefHat, Check, ShoppingCart } from 'lucide-react';
 import { RecipeSourceBadge, AvailabilityBadge } from '../common/Badge';
+import { ensureClientRichSteps } from '../../services/api';
 
 export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
   const [completedSteps, setCompletedSteps] = useState({});
@@ -12,6 +13,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
   const availability = recipe.availability;
   const isReady = availability?.isFullyAvailable || availability?.percentage === 100;
   const isAiFallback = recipe.source === 'WEB_RETRIEVED';
+  const processedSteps = ensureClientRichSteps(recipe);
 
   // Compute robust list of ingredients, checking availability.ingredientStatuses, then falling back to recipe.ingredients
   const ingredientList = (availability?.ingredientStatuses && availability.ingredientStatuses.length > 0)
@@ -147,7 +149,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
               }`}
             >
               <ChefHat className="w-3.5 h-3.5 text-[#287A52]" />
-              <span>Step-by-Step ({recipe.steps?.length || 0})</span>
+              <span>Step-by-Step ({processedSteps.length})</span>
             </button>
             <button
               type="button"
@@ -183,7 +185,7 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
                   <span>Cooking Instructions</span>
                 </h3>
                 <span className="text-xs text-slate-500 font-medium">
-                  {Object.values(completedSteps).filter(Boolean).length}/{recipe.steps.length} complete &middot; Tap step to track
+                  {Object.values(completedSteps).filter(Boolean).length}/{processedSteps.length} complete &middot; Tap step to track
                 </span>
               </div>
 
@@ -237,36 +239,54 @@ export const RecipeDetailModal = ({ recipe, isOpen, onClose, onCook }) => {
                 </div>
               )}
 
-              <ol className="space-y-2.5">
-                {recipe.steps.map((step, idx) => {
+              <ol className="space-y-3">
+                {processedSteps.map((rawStep, idx) => {
                   const isChecked = completedSteps[idx];
+                  const cleanStep = rawStep.replace(/^(?:Step\s*\d+[:\.\-]?|\d+[\.\)])\s*/i, '').trim();
+                  const phaseMatch = cleanStep.match(/^([^:()]+(?:\s*\([^)]*\))?):\s*(.*)$/);
+                  const stepPhase = phaseMatch ? phaseMatch[1].trim() : (idx === 0 ? 'Prepare & Prep' : idx === processedSteps.length - 1 ? 'Finish & Serve' : 'Cook & Sauté');
+                  const stepBody = phaseMatch ? phaseMatch[2].trim() : cleanStep;
+
                   return (
                     <li
                       key={idx}
                       onClick={() => toggleStep(idx)}
-                      className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
+                      className={`flex items-start gap-3 p-4 rounded-2xl border transition-all cursor-pointer select-none ${
                         isChecked
                           ? 'bg-slate-100/80 border-slate-200 text-slate-400 line-through'
-                          : 'bg-white border-slate-100 hover:border-slate-200 text-slate-800'
+                          : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-800 shadow-xs'
                       }`}
                     >
-                      <span className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${
+                      <span className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${
                         isChecked
                           ? 'bg-slate-300 text-white'
-                          : 'bg-emerald-100 text-emerald-800'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                       }`}>
-                        {idx + 1}
+                        {isChecked ? <Check className="w-4 h-4" /> : idx + 1}
                       </span>
-                      <span className="text-sm leading-relaxed pt-0.5">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700/70 mb-0.5">
-                          {idx === 0 ? 'Prepare' : idx === recipe.steps.length - 1 ? 'Finish' : 'Cook'}
+                      <div className="text-sm leading-relaxed flex-1 pt-0.5">
+                        <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md mb-1.5 border border-emerald-200/60">
+                          {stepPhase}
                         </span>
-                        {step}
-                      </span>
+                        <p className="text-slate-800 leading-relaxed text-sm">
+                          {stepBody}
+                        </p>
+                      </div>
                     </li>
                   );
                 })}
               </ol>
+
+              {/* Chef's Technique Note */}
+              <div className="mt-4 p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/70 text-xs text-slate-700 flex items-start gap-3">
+                <ChefHat className="w-5 h-5 text-[#287A52] shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-slate-800">Chef's Technique Tip</h4>
+                  <p className="mt-0.5 leading-relaxed text-[11px] text-slate-600">
+                    Cook on moderate heat for consistent results and to preserve texture. Taste and adjust salt or seasoning during the simmering phase before final plating.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 

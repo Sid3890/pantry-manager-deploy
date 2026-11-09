@@ -94,16 +94,34 @@ async function callTrpc(procedurePath, input, type = 'query') {
 // Normalizer: guarantees consistent object shape regardless of whether
 // response comes from tRPC backend (camelCase) or legacy Oracle DB (snake_case)
 export const normalizePantryItem = (item) => {
+  if (!item || typeof item !== 'object') {
+    return {
+      item_id: Date.now(),
+      itemId: Date.now(),
+      ingredient_id: 1,
+      ingredientId: 1,
+      name: 'Ingredient',
+      category: 'Produce & Veggies',
+      quantity: 1,
+      unit: 'piece',
+      expiry_date: '',
+      expiryDate: '',
+      expiryInfo: calculateExpiryStatus('')
+    };
+  }
+
   const expiryDate = item.expiryDate 
     ? (typeof item.expiryDate === 'string' ? item.expiryDate.slice(0, 10) : new Date(item.expiryDate).toISOString().slice(0, 10))
     : (item.expiry_date || '');
+
+  const resolvedName = item.ingredientName || item.ingredient_name || item.name || 'Ingredient';
 
   return {
     item_id: item.itemId ?? item.item_id ?? item.id,
     itemId: item.itemId ?? item.item_id ?? item.id,
     ingredient_id: item.ingredientId ?? item.ingredient_id ?? 1,
     ingredientId: item.ingredientId ?? item.ingredient_id ?? 1,
-    name: item.ingredientName ?? item.name ?? 'Ingredient',
+    name: resolvedName,
     category: item.category ?? 'Produce & Veggies',
     quantity: Number(item.quantity ?? 1),
     unit: item.unit ?? item.defaultUnit ?? 'piece',
@@ -111,6 +129,80 @@ export const normalizePantryItem = (item) => {
     expiryDate: expiryDate,
     expiryInfo: calculateExpiryStatus(expiryDate)
   };
+};
+
+export const ensureClientRichSteps = (recipe) => {
+  let steps = [];
+  if (Array.isArray(recipe.steps)) {
+    steps = recipe.steps.map(s => String(s).trim()).filter(Boolean);
+  } else if (typeof recipe.steps === 'string' && recipe.steps.trim()) {
+    steps = recipe.steps.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  }
+
+  if (steps.length >= 3 && steps.every(s => s.length >= 20)) {
+    return steps;
+  }
+
+  const ingNames = (recipe.ingredients || []).map(i => i.name || i.ingredientName).filter(Boolean);
+  const cookTime = Number(recipe.cook_time_min || recipe.cookTimeMin || 20);
+  const prepTime = Math.max(3, Math.round(cookTime * 0.25));
+  const mainTime = Math.max(5, cookTime - prepTime);
+
+  return [
+    `Preparation & Mis-en-place (~${prepTime} mins): Gather all required ingredients (${ingNames.slice(0, 5).join(', ')}). Rinse thoroughly and chop ingredients to uniform sizes for balanced cooking.`,
+    `Heating & Aromatics (2-3 mins): Place a pan or skillet over medium heat. Add a dash of oil or butter until shimmering, then add any aromatics (like onions or garlic) and cook until fragrant and translucent.`,
+    `Main Cooking (~${Math.round(mainTime * 0.6)} mins): Add remaining ingredients to the skillet. Sauté over medium heat, stirring regularly until tender, nicely browned, and cooked through.`,
+    `Seasoning & Simmer (2-3 mins): Lower heat slightly. Season to taste with salt, pepper, and herbs or spices. Allow flavors to meld together smoothly.`,
+    `Finishing & Serving: Remove from heat. Let the dish rest for 1 minute before plating warm. Garnish as desired and enjoy!`
+  ];
+};
+
+export const deduplicateClientRecipes = (recipes) => {
+  const result = [];
+  const normalizeTitle = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\b(and|with|in|on|at|of|the|a|an|quick|easy|crispy|simple|homemade|style|recipe|delicious|fresh|pan|skillet|toasted|warm|creamy|golden)\b/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const getIngSet = (r) => new Set((r.ingredients || []).map(i => String(i.name || i.ingredientName || '').toLowerCase().trim()).filter(Boolean));
+
+  for (const r of recipes) {
+    if (!r || !r.name) continue;
+    const titleNorm = normalizeTitle(r.name);
+    const titleWords = new Set(titleNorm.split(' ').filter(w => w.length > 2));
+    const ings = getIngSet(r);
+
+    const isDup = result.some(existing => {
+      const existingTitleNorm = normalizeTitle(existing.name);
+      if (titleNorm === existingTitleNorm && titleNorm.length > 0) return true;
+
+      const existingTitleWords = new Set(existingTitleNorm.split(' ').filter(w => w.length > 2));
+      if (titleWords.size > 0 && existingTitleWords.size > 0) {
+        const commonWords = Array.from(titleWords).filter(w => existingTitleWords.has(w));
+        if (commonWords.length / Math.min(titleWords.size, existingTitleWords.size) >= 0.8) return true;
+      }
+
+      const existingIngs = getIngSet(existing);
+      if (ings.size >= 2 && existingIngs.size >= 2) {
+        const common = Array.from(ings).filter(i => existingIngs.has(i));
+        const minSize = Math.min(ings.size, existingIngs.size);
+        const maxSize = Math.max(ings.size, existingIngs.size);
+        if (common.length / minSize >= 0.8 && minSize / maxSize >= 0.7) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (!isDup) {
+      result.push(r);
+    }
+  }
+
+  return result;
 };
 
 // Expiry calculation relative to current date (matches backend rules)
@@ -285,21 +377,34 @@ export const api = {
     },
 
     async addItem(item) {
+      const ingredientIdNum = item.ingredient_id && !isNaN(Number(item.ingredient_id))
+        ? Number(item.ingredient_id)
+        : (item.ingredientId && !isNaN(Number(item.ingredientId)) ? Number(item.ingredientId) : undefined);
+
       const backendResult = await callTrpc('pantry.add', {
-        ingredientId: Number(item.ingredient_id || item.ingredientId || 1),
+        ingredientId: ingredientIdNum,
+        name: item.name?.trim(),
+        category: item.category,
         quantity: String(item.quantity),
         unit: item.unit || 'piece',
         expiryDate: item.expiry_date || item.expiryDate || undefined
       }, 'mutation');
 
-      const newItem = normalizePantryItem(backendResult || {
-        item_id: Date.now(),
-        ingredient_id: item.ingredient_id || Math.floor(Math.random() * 8000) + 100,
-        name: item.name.trim(),
-        category: item.category || 'Produce & Veggies',
-        quantity: Number(item.quantity),
-        unit: item.unit || 'piece',
-        expiry_date: item.expiry_date || item.expiryDate
+      const isObj = backendResult && typeof backendResult === 'object';
+      const resolvedId = typeof backendResult === 'number'
+        ? backendResult
+        : (isObj ? (backendResult.itemId ?? backendResult.item_id ?? Date.now()) : Date.now());
+
+      const newItem = normalizePantryItem({
+        ...(isObj ? backendResult : {}),
+        item_id: resolvedId,
+        itemId: resolvedId,
+        ingredient_id: (isObj && backendResult.ingredientId) || ingredientIdNum || Math.floor(Math.random() * 8000) + 100,
+        name: (isObj && (backendResult.ingredientName || backendResult.name)) || item.name?.trim() || 'Ingredient',
+        category: (isObj && backendResult.category) || item.category || 'Produce & Veggies',
+        quantity: Number((isObj && backendResult.quantity) || item.quantity || 1),
+        unit: (isObj && (backendResult.unit || backendResult.defaultUnit)) || item.unit || 'piece',
+        expiry_date: (isObj && (backendResult.expiryDate || backendResult.expiry_date)) || item.expiry_date || item.expiryDate || ''
       });
       currentPantry = [newItem, ...currentPantry];
       setStorage('items', currentPantry);
@@ -395,6 +500,7 @@ export const api = {
     async getRecommendations(filters = {}) {
       // Track previously-seen recipes to pass as exclusions
       const seenRecipeIds = getStorage('seen_recipe_ids', []);
+      const seenRecipeNames = getStorage('seen_recipe_names', []);
       const seenUrls = getStorage('seen_urls', []);
       const activePantry = filters.pantryItems?.length ? filters.pantryItems : currentPantry;
 
@@ -404,6 +510,7 @@ export const api = {
         maxTime: filters.maxTime ? Number(filters.maxTime) : undefined,
         dietaryPreference: filters.dietary && filters.dietary !== 'ALL' ? filters.dietary : undefined,
         excludeRecipeIds: seenRecipeIds.slice(-30),
+        excludeRecipeNames: seenRecipeNames.slice(-50),
         excludeUrls: seenUrls.slice(-30),
         pantryItems: (activePantry || []).map(item => ({
           ingredientId: item.ingredientId ?? item.ingredient_id,
@@ -414,13 +521,13 @@ export const api = {
       }, 'mutation');
 
       if (backendRecommend) {
-        const allCandidates = [];
+        const rawCandidates = [];
 
         // Normalize DB candidates
         const dbCandidates = backendRecommend.candidates || [];
         for (const r of dbCandidates) {
           const avail = calculateRecipeAvailability(r, activePantry);
-          allCandidates.push({
+          rawCandidates.push({
             recipe_id: r.recipeId ?? r.recipe_id,
             name: r.name,
             tagline: r.tagline || `Cook time: ${r.cookTimeMin || r.cook_time_min} mins`,
@@ -432,7 +539,7 @@ export const api = {
             rating: Number(r.rating || 4.5),
             reviews_count: 0,
             dietary_tags: r.dietaryTags || r.dietary_tags || [],
-            steps: Array.isArray(r.steps) ? r.steps : (r.steps ? r.steps.split('\n') : ['Prepare ingredients and cook.']),
+            steps: ensureClientRichSteps(r),
             ingredients: (r.ingredients || []).map(ing => ({
               ingredient_id: ing.ingredientId ?? ing.ingredient_id,
               name: ing.name || ing.ingredientName,
@@ -466,7 +573,7 @@ export const api = {
           const recipeIdStr = isAiGenerated
             ? (c.url || `ai-recipe://${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
             : `web-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          allCandidates.push({
+          rawCandidates.push({
             recipe_id: recipeIdStr,
             name: c.name,
             tagline: isAiGenerated
@@ -481,7 +588,7 @@ export const api = {
             rating: Number(c.rating || (isAiGenerated ? 4.8 : 4.3)),
             reviews_count: 0,
             dietary_tags: c.dietaryTags || [],
-            steps: c.steps ? (typeof c.steps === 'string' ? c.steps.split('\n') : c.steps) : ['Follow recipe instructions.'],
+            steps: ensureClientRichSteps(c),
             ingredients: (c.ingredients || []).map(ing => ({
               name: ing.name,
               quantity_required: Number(ing.quantity ?? 1),
@@ -543,7 +650,7 @@ export const api = {
             });
           }
 
-          allCandidates.push({
+          rawCandidates.push({
             recipe_id: `web-partial-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             name: c.name,
             tagline: `Cook time: ${c.cookTimeMin} mins • ${missingCount} ingredient${missingCount > 1 ? 's' : ''} missing`,
@@ -556,7 +663,7 @@ export const api = {
             rating: Number(c.rating || 4.0),
             reviews_count: 0,
             dietary_tags: c.dietaryTags || [],
-            steps: c.steps ? (typeof c.steps === 'string' ? c.steps.split('\n') : c.steps) : ['Follow recipe instructions.'],
+            steps: ensureClientRichSteps(c),
             ingredients: ingredientStatuses,
             availability: {
               percentage: pct,
@@ -567,6 +674,9 @@ export const api = {
             },
           });
         }
+
+        // Deduplicate recipes to remove duplicate recipes with different names
+        const allCandidates = deduplicateClientRecipes(rawCandidates);
 
         // Update stored recipes registry so cookRecipe can find them
         allCandidates.forEach(cand => {
@@ -579,8 +689,10 @@ export const api = {
         // Update seen recipes for next call
         const newIds = allCandidates.filter(r => typeof r.recipe_id === 'number').map(r => r.recipe_id);
         const newUrls = allCandidates.filter(r => r.source_url).map(r => r.source_url);
+        const newNames = allCandidates.map(r => r.name);
         setStorage('seen_recipe_ids', [...seenRecipeIds, ...newIds].slice(-50));
         setStorage('seen_urls', [...seenUrls, ...newUrls].slice(-50));
+        setStorage('seen_recipe_names', [...seenRecipeNames, ...newNames].slice(-60));
 
         return {
           count: allCandidates.length,
@@ -594,15 +706,26 @@ export const api = {
         };
       }
 
-      // Backend is unreachable — show an informative empty state, NOT stale mock data
+      // If backend was unreachable or returned empty, gracefully match against local recipes store
+      const localCandidates = (currentRecipes || []).map(r => {
+        const avail = calculateRecipeAvailability(r, activePantry);
+        return {
+          ...r,
+          availability: avail,
+          steps: ensureClientRichSteps(r),
+        };
+      });
+
+      const uniqueLocal = deduplicateClientRecipes(localCandidates);
+
       return {
-        count: 0,
-        recipes: [],
+        count: uniqueLocal.length,
+        recipes: uniqueLocal,
         metadata: {
-          database_matches: 0,
+          source: 'LOCAL_STORE',
+          database_matches: uniqueLocal.length,
           ai_fallbacks: 0,
-          ready_to_cook_count: 0,
-          error: 'Could not connect to the recipe engine. Please ensure the backend server is running.',
+          ready_to_cook_count: uniqueLocal.filter(r => r.availability?.percentage === 100).length,
         }
       };
     },

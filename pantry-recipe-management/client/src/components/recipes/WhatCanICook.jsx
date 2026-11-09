@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Sparkles, SlidersHorizontal, ChevronDown, ChevronUp, Database, CheckCircle2, ChefHat, AlertTriangle, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { usePantry } from '../../context/PantryContext';
@@ -31,7 +31,7 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
     setHasTriggeredSearch(true);
     setBackendError(null);
     try {
-      const res = await api.recipes.getRecommendations({ ...filters, cookingLevel, pantryItems });
+      const res = await api.recipes.getRecommendations({ cookingLevel, pantryItems });
       setRecipes(res.recipes);
       setMeta(res.metadata || {});
       if (res.metadata?.error) {
@@ -43,9 +43,9 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
     } finally {
       setLoading(false);
     }
-  }, [filters, cookingLevel, pantryItems]);
+  }, [cookingLevel, pantryItems]);
 
-  // Initial load on first render
+  // Initial load on first render or when cookingLevel / pantry changes
   useEffect(() => {
     fetchRecommendations();
   }, [fetchRecommendations]);
@@ -57,6 +57,7 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
   const handleClearHistory = () => {
     try {
       localStorage.removeItem('pantry_seen_recipe_ids');
+      localStorage.removeItem('pantry_seen_recipe_names');
       localStorage.removeItem('pantry_seen_urls');
     } catch {}
     fetchRecommendations();
@@ -64,16 +65,59 @@ export const WhatCanICook = ({ onSelectRecipe }) => {
 
   const hasActiveFilters = Boolean(filters.maxTime || filters.dietary !== 'ALL' || filters.difficulty !== 'ALL');
 
-  // Filter recommendations by availability tab
-  const displayedRecipes = recipes.filter(r => {
-    if (availabilityFilter === 'READY') {
-      return r.availability?.percentage === 100;
-    }
-    if (availabilityFilter === 'ALMOST') {
-      return r.availability?.percentage >= 75 && r.availability?.percentage < 100;
-    }
-    return true;
-  });
+  // Filter recommendations locally from existing loaded recipes without triggering AI re-search
+  const displayedRecipes = useMemo(() => {
+    return recipes.filter(r => {
+      // 1. Availability filter (ALL | READY | ALMOST)
+      if (availabilityFilter === 'READY') {
+        if (r.availability?.percentage !== 100) return false;
+      } else if (availabilityFilter === 'ALMOST') {
+        if (!r.availability || r.availability.percentage < 75 || r.availability.percentage >= 100) return false;
+      }
+
+      // 2. Max Cook Time filter
+      if (filters.maxTime) {
+        const maxTimeNum = Number(filters.maxTime);
+        const cookTime = Number(r.cook_time_min ?? r.cookTimeMin ?? 0);
+        if (cookTime > maxTimeNum) return false;
+      }
+
+      // 3. Difficulty Level filter
+      if (filters.difficulty && filters.difficulty !== 'ALL') {
+        const diff = String(r.difficulty_level ?? r.difficultyLevel ?? '').toUpperCase();
+        if (diff !== filters.difficulty.toUpperCase()) return false;
+      }
+
+      // 4. Dietary requirement filter
+      if (filters.dietary && filters.dietary !== 'ALL') {
+        const targetDiet = filters.dietary.toLowerCase();
+        const tags = (r.dietary_tags ?? r.dietaryTags ?? []).map(t => String(t).toLowerCase());
+        const recipeName = String(r.name || '').toLowerCase();
+        const ingredients = (r.ingredients || []).map(i => String(i.name || i.ingredientName || '').toLowerCase());
+
+        let matchesDiet = tags.some(t => t.includes(targetDiet) || targetDiet.includes(t));
+
+        if (!matchesDiet) {
+          if (targetDiet === 'vegetarian') {
+            const nonVeg = ['chicken', 'mutton', 'beef', 'pork', 'fish', 'prawn', 'prawns', 'shrimp', 'meat', 'bacon', 'ham'];
+            const hasMeat = ingredients.some(ing => nonVeg.some(nv => ing.includes(nv))) ||
+                            nonVeg.some(nv => recipeName.includes(nv));
+            matchesDiet = !hasMeat;
+          } else if (targetDiet === 'high protein') {
+            const highProtein = ['egg', 'paneer', 'chicken', 'tofu', 'chickpea', 'lentil', 'dal', 'fish', 'protein', 'cheese'];
+            matchesDiet = ingredients.some(ing => highProtein.some(hp => ing.includes(hp)));
+          } else if (targetDiet === 'gluten free') {
+            const gluten = ['flour', 'bread', 'pasta', 'wheat', 'all purpose flour', 'maida', 'penne', 'noodles'];
+            matchesDiet = !ingredients.some(ing => gluten.some(g => ing.includes(g)));
+          }
+        }
+
+        if (!matchesDiet) return false;
+      }
+
+      return true;
+    });
+  }, [recipes, availabilityFilter, filters]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">

@@ -36,9 +36,44 @@ function parseDuration(value: unknown) {
   return Number(match[1] ?? 0) * 60 + Number(match[2] ?? 0) || 30;
 }
 
+function extractStepTexts(val: unknown): string[] {
+  if (!val) return [];
+  if (typeof val === "string") {
+    const cleaned = stripHtml(val).trim();
+    if (!cleaned) return [];
+    if (cleaned.includes("\n")) {
+      return cleaned.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+    }
+    return [cleaned];
+  }
+  if (Array.isArray(val)) {
+    const res: string[] = [];
+    for (const item of val) {
+      res.push(...extractStepTexts(item));
+    }
+    return res;
+  }
+  if (typeof val === "object" && val !== null) {
+    const obj = val as Record<string, unknown>;
+    if (obj.itemListElement) {
+      return extractStepTexts(obj.itemListElement);
+    }
+    if (obj.text) {
+      return extractStepTexts(obj.text);
+    }
+    if (obj.description && typeof obj.description === "string") {
+      return extractStepTexts(obj.description);
+    }
+    if (obj.name && typeof obj.name === "string" && !String(obj["@type"]).includes("Section")) {
+      return extractStepTexts(obj.name);
+    }
+  }
+  return [];
+}
+
 function parseInstruction(value: unknown): string {
-  if (Array.isArray(value)) return value.map(item => typeof item === "string" ? item : typeof item === "object" && item && "text" in item ? String((item as { text: unknown }).text) : "").filter(Boolean).join("\n");
-  return typeof value === "string" ? stripHtml(value) : "";
+  const steps = extractStepTexts(value);
+  return steps.filter(s => s.length > 5).join("\n");
 }
 
 function parseRecipeJsonLd(html: string, fallbackUrl: string): PublishedRecipeCandidate | undefined {
@@ -279,6 +314,118 @@ export function calculateAdaptation(candidate: PublishedRecipeCandidate, pantry:
   return { valid: true as const, scaleFactor, missing: [], ingredients };
 }
 
+export function ensureRichSteps(
+  name: string,
+  rawSteps: string | string[] | undefined,
+  ingredients: Array<{ name: string; quantity?: number | string; unit?: string }>,
+  cookTimeMin: number = 20,
+  difficultyLevel: string = "BEGINNER"
+): string {
+  let stepList: string[] = [];
+  if (Array.isArray(rawSteps)) {
+    stepList = rawSteps.map(s => String(s).trim()).filter(s => s.length > 0);
+  } else if (typeof rawSteps === "string" && rawSteps.trim().length > 0) {
+    stepList = rawSteps.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+  }
+
+  // Check if existing steps are genuinely informative (at least 3 descriptive steps, each >= 25 chars)
+  const isInformative = stepList.length >= 3 && stepList.filter(s => s.length >= 25).length >= 3;
+  if (isInformative) {
+    return stepList.join("\n");
+  }
+
+  const ingNames = ingredients.map(i => i.name).filter(Boolean);
+  const ingSummary = ingredients.map(i => `${i.quantity ?? 1} ${i.unit ?? 'piece'} ${i.name}`).join(", ");
+  const mainFat = ingredients.find(i => /butter|oil|ghee/i.test(i.name))?.name || "cooking oil or butter";
+  const aromatics = ingredients.filter(i => /onion|garlic|ginger|chilli|pepper/i.test(i.name)).map(i => i.name);
+  const mainProteins = ingredients.filter(i => /paneer|chicken|egg|tofu|fish|mutton|prawn/i.test(i.name)).map(i => i.name);
+  const mainCarbs = ingredients.filter(i => /rice|bread|pasta|potato|noodle/i.test(i.name)).map(i => i.name);
+
+  const prepTime = Math.max(3, Math.round(cookTimeMin * 0.25));
+  const cookTime = Math.max(5, cookTimeMin - prepTime);
+
+  const generatedSteps: string[] = [
+    `Preparation & Mis-en-place (~${prepTime} mins): Gather and measure your ingredients (${ingSummary || ingNames.join(', ')}). Rinse produce thoroughly and chop all vegetables or proteins into even bite-sized pieces for consistent cooking.`,
+    `Heating & Aromatics (2-3 mins): Set a suitable skillet, saucepan, or pot over medium heat. Add your ${mainFat} and allow it to gently heat until shimmering. ${aromatics.length ? `Toss in the ${aromatics.join(' and ')} and sauté for 2 minutes until fragrant, translucent, and lightly softened.` : 'Ensure the pan surface is evenly coated and hot before proceeding.'}`,
+    `Main Cooking Phase (~${Math.round(cookTime * 0.5)} mins): ${mainProteins.length ? `Add the ${mainProteins.join(', ')} to the skillet. Cook over medium heat, stirring occasionally for about ${Math.round(cookTime * 0.4)} minutes until lightly browned, tender, and cooked through.` : mainCarbs.length ? `Incorporate the ${mainCarbs.join(', ')} along with the rest of the ingredients into the pan. Stir gently to coat in the seasoned fat and warm through thoroughly.` : `Add the remaining ingredients into the pan. Sauté over medium heat for ${Math.round(cookTime * 0.5)} minutes until tender-crisp.`}`,
+    `Simmering & Flavor Melding (3-4 mins): Lower the heat to medium-low. Season with salt, pepper, or spices to taste. Let all ingredients simmer together gently for 3-4 minutes so the flavors integrate smoothly.`,
+    `Resting & Plating: Remove from heat. Let the dish rest in the pan for 1 minute so juices settle. Transfer carefully to a warm serving dish and enjoy warm.`
+  ];
+
+  return generatedSteps.join("\n");
+}
+
+export function isDuplicateRecipe(
+  r1: { name: string; ingredients?: Array<{ name: string }> },
+  r2: { name: string; ingredients?: Array<{ name: string }> }
+): boolean {
+  if (!r1?.name || !r2?.name) return false;
+
+  const normalizeTitle = (s: string) =>
+    s.toLowerCase()
+      .replace(/[^a-z0-9 ]/g, " ")
+      .replace(/\b(and|with|in|on|at|of|the|a|an|quick|easy|crispy|simple|homemade|style|recipe|delicious|fresh|pan|skillet|toasted|warm|creamy|golden)\b/g, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  const name1 = normalizeTitle(r1.name);
+  const name2 = normalizeTitle(r2.name);
+
+  if (name1 === name2 && name1.length > 0) return true;
+
+  // Check word token overlap in titles
+  const words1 = new Set(name1.split(" ").filter(w => w.length > 2));
+  const words2 = new Set(name2.split(" ").filter(w => w.length > 2));
+  if (words1.size > 0 && words2.size > 0) {
+    const commonWords = Array.from(words1).filter(w => words2.has(w));
+    const overlapRatio = commonWords.length / Math.min(words1.size, words2.size);
+    if (overlapRatio >= 0.8) return true;
+  }
+
+  // Check ingredient similarity: recipes sharing 80%+ ingredients are duplicate variations
+  const getIngNames = (r: { ingredients?: Array<{ name: string }> }) => {
+    return new Set(
+      (r.ingredients || [])
+        .map(i => normalize(i.name))
+        .filter(n => n.length > 1)
+    );
+  };
+
+  const ings1 = getIngNames(r1);
+  const ings2 = getIngNames(r2);
+
+  if (ings1.size >= 2 && ings2.size >= 2) {
+    const commonIngs = Array.from(ings1).filter(i => ings2.has(i));
+    const minSize = Math.min(ings1.size, ings2.size);
+    const maxSize = Math.max(ings1.size, ings2.size);
+    if (commonIngs.length / minSize >= 0.8 && minSize / maxSize >= 0.7) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function deduplicateCandidates<T extends { name?: string; candidate?: { name: string; ingredients?: Array<{ name: string }> }; ingredients?: Array<{ name: string }> }>(
+  list: T[],
+  existingRecipes: Array<{ name: string; ingredients?: Array<{ name: string }> }> = []
+): T[] {
+  const result: T[] = [];
+  const referenceList: Array<{ name: string; ingredients?: Array<{ name: string }> }> = [...existingRecipes];
+
+  for (const item of list) {
+    const cand = (item && 'candidate' in item && item.candidate) ? item.candidate : (item as any);
+    if (!cand || !cand.name) continue;
+    const isDup = referenceList.some(ref => isDuplicateRecipe(cand, ref));
+    if (!isDup) {
+      result.push(item);
+      referenceList.push(cand);
+    }
+  }
+
+  return result;
+}
+
 /**
  * Uses Gemini AI to generate 2-3 recipes using ONLY what the user has in their pantry.
  * This is the guaranteed fallback when web scraping finds no fully-matching recipes.
@@ -288,6 +435,7 @@ export async function generateRecipesWithAI(input: {
   cookingLevel?: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
   maxTime?: number;
   dietaryPreference?: string;
+  excludeRecipeNames?: string[];
 }): Promise<PublishedRecipeCandidate[]> {
   const availableItems = input.pantry.filter(p => Number(p.quantity) > 0);
   if (!availableItems.length) return [];
@@ -299,10 +447,49 @@ export async function generateRecipesWithAI(input: {
   const maxCookTime = input.maxTime || 30;
   const level = input.cookingLevel || "BEGINNER";
   const dietary = input.dietaryPreference ? `Dietary preference: ${input.dietaryPreference}.` : "";
+  const excludeList = (input.excludeRecipeNames || []).slice(0, 25).join(", ");
+  const exclusionInstruction = excludeList
+    ? `DO NOT repeat, re-create, or generate variations similar to any of these previously shown recipes: [${excludeList}].`
+    : "";
 
-  const systemPrompt = `You are a creative home chef. Generate 2-3 recipes using ONLY the ingredients listed. Do not add any ingredients not in the list. Return ONLY a raw JSON array (no markdown, no backticks, no explanation). Format: [{"name":"Recipe Name","cookTimeMin":15,"difficultyLevel":"BEGINNER","steps":"Step 1: ...\\nStep 2: ...\\nStep 3: ...","ingredients":[{"name":"exact ingredient name from list","quantity":1,"unit":"piece"}],"dietaryTags":["Quick"]}]`;
+  const systemPrompt = `You are a creative, professional chef. Generate 2 to 3 distinct, practical recipes using ONLY ingredients from the user's pantry.
 
-  const userPrompt = `My pantry: ${pantryList}. Cooking level: ${level}. Max cook time: ${maxCookTime} mins. ${dietary} Generate 2-3 recipes I can cook RIGHT NOW using only those ingredients.`;
+STRICT DIVERSITY AND NON-DUPLICATION RULES:
+1. EVERY RECIPE MUST BE CONCEPTUALLY DISTINCT:
+   - Do NOT generate minor variations of the same dish (e.g., do NOT generate both 'Egg Toast' and 'Egg Sandwich' or multiple slight variations of scrambled eggs). Generate ONLY ONE recipe for any cooking concept.
+   - If ingredients allow, choose different cooking styles or formats (e.g. one sauté/stir-fry or curry, one sandwich/toast/bake, one soup/broth or scramble).
+   - Each recipe must have a different main technique, texture, and flavor profile.
+2. EXCLUSIONS:
+   ${exclusionInstruction}
+3. INGREDIENTS CONSTRAINT:
+   - Use ONLY ingredients listed in the user's pantry. Do NOT assume or invent ingredients that are not in the list.
+4. DETAILED STEP-BY-STEP INSTRUCTIONS:
+   - Provide 4 to 6 thorough, informative, step-by-step instructions in the "steps" array.
+   - Mention specific heat levels (e.g., medium heat, low simmer), exact prep actions, pan/utensil choices, cooking times per step (e.g., sauté for 3-4 minutes), and visual/sensory indicators (e.g., "until golden brown and fragrant", "whisk until smooth and airy").
+   - Include clear serving suggestions and seasoning tips.
+
+Format output as a raw JSON array of objects with this schema:
+[
+  {
+    "name": "Distinct Dish Name",
+    "cookTimeMin": 20,
+    "difficultyLevel": "BEGINNER",
+    "dietaryTags": ["Vegetarian", "Quick"],
+    "steps": [
+      "Preparation & Mis-en-place (3 mins): Measure out your ingredients. Finely chop...",
+      "Sautéing Aromatics (3 mins): Heat 10g of butter in a non-stick skillet over medium heat until foaming. Add...",
+      "Main Cooking (5 mins): Add the main ingredients to the pan. Cook over medium-high heat for 4-5 minutes stirring until golden...",
+      "Finishing & Seasoning (2 mins): Lower heat to medium-low, season with salt and pepper to taste...",
+      "Plating & Serving: Remove from heat, let rest for 1 minute, and serve warm on a plate."
+    ],
+    "ingredients": [
+      { "name": "exact ingredient name from pantry", "quantity": 1, "unit": "piece" }
+    ]
+  }
+]
+Return ONLY valid JSON without markdown fences.`;
+
+  const userPrompt = `My pantry: ${pantryList}. Cooking level: ${level}. Max cook time: ${maxCookTime} mins. ${dietary} Generate 2-3 distinct, practical recipes I can cook RIGHT NOW using ONLY these ingredients. Ensure steps are rich and detailed.`;
 
   try {
     const res = await Promise.race([
@@ -339,27 +526,28 @@ export async function generateRecipesWithAI(input: {
       const item = list[idx];
       if (!item || !item.name || !Array.isArray(item.ingredients) || item.ingredients.length === 0) continue;
 
-      const stepsStr = Array.isArray(item.steps)
-        ? item.steps.join("\n")
-        : String(item.steps || "Prepare ingredients and cook according to the recipe steps.");
-
       const validDifficulty: "BEGINNER" | "INTERMEDIATE" | "ADVANCED" =
         item.difficultyLevel === "ADVANCED" ? "ADVANCED"
         : item.difficultyLevel === "INTERMEDIATE" ? "INTERMEDIATE"
         : "BEGINNER";
 
+      const ings = (item.ingredients as any[])
+        .map((ing: any) => ({
+          name: String(ing.name || "").trim(),
+          quantity: Math.max(0.001, Number(ing.quantity) || 1),
+          unit: String(ing.unit || "piece").trim(),
+        }))
+        .filter(ing => ing.name.length > 0);
+
+      const cookTime = Math.max(5, Number(item.cookTimeMin) || 15);
+      const stepsStr = ensureRichSteps(String(item.name).trim(), item.steps, ings, cookTime, validDifficulty);
+
       candidates.push({
         name: String(item.name).trim(),
         steps: stepsStr,
-        cookTimeMin: Math.max(5, Number(item.cookTimeMin) || 15),
+        cookTimeMin: cookTime,
         difficultyLevel: validDifficulty,
-        ingredients: (item.ingredients as any[])
-          .map((ing: any) => ({
-            name: String(ing.name || "").trim(),
-            quantity: Math.max(0.001, Number(ing.quantity) || 1),
-            unit: String(ing.unit || "piece").trim(),
-          }))
-          .filter(ing => ing.name.length > 0),
+        ingredients: ings,
         dietaryTags: Array.isArray(item.dietaryTags)
           ? item.dietaryTags.map((t: any) => String(t).trim())
           : ["Homemade"],
@@ -369,8 +557,10 @@ export async function generateRecipesWithAI(input: {
       });
     }
 
-    console.log(`[generateRecipesWithAI] Generated ${candidates.length} AI recipes for pantry.`);
-    return candidates;
+    // Deduplicate internally against any excluded names and between the generated recipes
+    const deduplicated = deduplicateCandidates(candidates, (input.excludeRecipeNames || []).map(name => ({ name })));
+    console.log(`[generateRecipesWithAI] Generated ${deduplicated.length} distinct AI recipes for pantry.`);
+    return deduplicated;
   } catch (err) {
     console.warn("[generateRecipesWithAI] AI generation failed:", err);
     return [];
@@ -384,6 +574,7 @@ export async function recommendFromWeb(input: {
   maxTime?: number;
   dietaryPreference?: string;
   excludeUrls?: string[];
+  excludeRecipeNames?: string[];
 }) {
   if (!input.pantry.length) {
     return { candidates: [], validCandidates: [], invalidCandidates: [], storedRecipeIds: [] };
@@ -418,12 +609,18 @@ export async function recommendFromWeb(input: {
       cookingLevel: input.cookingLevel,
       maxTime: input.maxTime,
       dietaryPreference: input.dietaryPreference,
+      excludeRecipeNames: input.excludeRecipeNames,
     }),
   ]);
 
   const timeFiltered = input.maxTime !== undefined
     ? webCandidatesRaw.filter(c => c.cookTimeMin <= input.maxTime!)
     : webCandidatesRaw;
+
+  // Ensure rich steps on web candidates
+  for (const c of timeFiltered) {
+    c.steps = ensureRichSteps(c.name, c.steps, c.ingredients, c.cookTimeMin, c.difficultyLevel);
+  }
 
   // Validate web-scraped candidates against pantry
   const validWebCandidates: Array<{ candidate: PublishedRecipeCandidate; validation: ReturnType<typeof calculateAdaptation> }> = [];
@@ -483,13 +680,21 @@ export async function recommendFromWeb(input: {
     };
   });
 
-  // Web valid first, then AI — so DB-backed recipes appear before AI-generated ones when both exist
-  const allValidCandidates = [...validWebCandidates, ...validAiCandidates];
+  // Web valid first, then AI — deduplicate so no duplicate recipes with different names are returned
+  const allValidCandidates = deduplicateCandidates(
+    [...validWebCandidates, ...validAiCandidates],
+    (input.excludeRecipeNames || []).map(name => ({ name }))
+  );
+
+  const deduplicatedInvalid = deduplicateCandidates(
+    invalidCandidates.slice(0, 5),
+    allValidCandidates.map(v => v.candidate)
+  );
 
   return {
     candidates: timeFiltered,
     validCandidates: allValidCandidates.map(v => ({ candidate: v.candidate, ...v.validation })),
-    invalidCandidates: invalidCandidates.slice(0, 5).map(v => ({ candidate: v.candidate, ...v.validation })),
+    invalidCandidates: deduplicatedInvalid.map(v => ({ candidate: v.candidate, ...v.validation })),
     storedRecipeIds,
   };
 }
